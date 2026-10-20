@@ -1,6 +1,6 @@
 /**
  * OmniCast — 100% Functional WebRTC Remote Desktop (AnyDesk Grade)
- * Full Mouse, Keyboard, Wheel, Special Keys & Native Host OS Bridge.
+ * Production & Vercel Live Ready — Full Mouse, Keyboard, Wheel, Special Keys & P2P Engine.
  */
 
 if (window.__OMNICAST_INITIALIZED__) {
@@ -11,17 +11,20 @@ if (window.__OMNICAST_INITIALIZED__) {
   (() => {
     'use strict';
 
-    // Public Google & OpenRelay STUN servers for cross-network WebRTC
+    // Global Public Google & Twilio STUN servers for cross-network WebRTC traversal
     const PEER_CONFIG = {
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:openrelay.metered.ca:80' }
-        ]
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' }
+        ],
+        iceCandidatePoolSize: 10
       },
-      debug: 1
+      debug: 0
     };
 
     const CHUNK_SIZE = 64 * 1024; // 64KB per file slice
@@ -197,7 +200,6 @@ if (window.__OMNICAST_INITIALIZED__) {
       if (!laserCtx || !el.laserCanvas) return;
       laserCtx.clearRect(0, 0, el.laserCanvas.width, el.laserCanvas.height);
 
-      // Render Laser Point
       if (laserPoint && (Date.now() - laserPoint.time < 1200)) {
         const x = laserPoint.x * el.laserCanvas.width;
         const y = laserPoint.y * el.laserCanvas.height;
@@ -217,7 +219,6 @@ if (window.__OMNICAST_INITIALIZED__) {
         laserCtx.fill();
       }
 
-      // Render Ripples
       const now = Date.now();
       for (let i = ripples.length - 1; i >= 0; i--) {
         const r = ripples[i];
@@ -243,7 +244,7 @@ if (window.__OMNICAST_INITIALIZED__) {
       ripples.push({ x: normX, y: normY, start: Date.now() });
     }
 
-    // Helper Functions
+    // Helpers
     function getRandom6Digits() {
       return String(Math.floor(100000 + Math.random() * 900000));
     }
@@ -271,7 +272,7 @@ if (window.__OMNICAST_INITIALIZED__) {
       }, 3500);
     }
 
-    // Check Local Node Input Server Availability
+    // Check Local Node Input Server Availability (silently falls back on Vercel)
     async function checkLocalInputServer() {
       try {
         const res = await fetch('/api/status', { method: 'GET' });
@@ -287,9 +288,9 @@ if (window.__OMNICAST_INITIALIZED__) {
       }
     }
 
-    // Dispatch Remote Event to Native Windows OS via server.js
+    // Relay to host OS if running locally via server.js
     function relayToNativeHost(event) {
-      if (!state.isHost) return;
+      if (!state.isHost || !state.hasServerApi) return;
       fetch('/api/host-input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -346,7 +347,7 @@ if (window.__OMNICAST_INITIALIZED__) {
         if (state.activeConn && state.activeConn.open) {
           state.activeConn.send({ type: 'ping', t: Date.now() });
         }
-      }, 2500);
+      }, 2000);
     }
 
     function stopPingHeartbeat() {
@@ -358,7 +359,7 @@ if (window.__OMNICAST_INITIALIZED__) {
     }
 
     // =========================================================================
-    // Initialize PeerJS
+    // Initialize PeerJS (Pure Client-Side WebRTC Mesh)
     // =========================================================================
     function initPeer() {
       let saved = localStorage.getItem('omnicast_my_code');
@@ -382,7 +383,7 @@ if (window.__OMNICAST_INITIALIZED__) {
         // Connected to PeerJS Broker
         state.peer.on('open', (id) => {
           console.log('[OmniCast Peer Open]', id);
-          el.statusLabel.textContent = 'Ready';
+          el.statusLabel.textContent = 'Ready (Live)';
           el.connectionStatus.className = 'status-badge status-online';
         });
 
@@ -396,7 +397,7 @@ if (window.__OMNICAST_INITIALIZED__) {
             el.myCodeDisplay.textContent = formatDisplay(fresh);
             initPeer();
           } else if (err.type === 'peer-unavailable') {
-            showToast('That code is offline. Check with your partner!', 'error');
+            showToast('Desk Code offline. Check partner device!', 'error');
             resetConnectButton();
           }
         });
@@ -412,12 +413,16 @@ if (window.__OMNICAST_INITIALIZED__) {
         state.peer.on('call', (call) => {
           console.log('[Incoming Screen Call from]', call.peer);
           state.activeCall = call;
-          call.answer(); // Viewer answers (receive-only)
+          call.answer(); // Viewer answers
 
           call.on('stream', (stream) => {
-            console.log('[Stream Received on Viewer]');
+            console.log('[Stream Received on Viewer]', stream.id);
             el.remoteVideo.srcObject = stream;
-            el.remoteVideo.play().catch(e => console.log('Autoplay hint:', e));
+            el.remoteVideo.muted = true;
+            el.remoteVideo.play().then(() => {
+              console.log('[Video stream playing successfully]');
+            }).catch(e => console.log('Autoplay hint:', e));
+
             el.loaderOverlay.classList.add('hidden');
             el.videoContainer.focus();
             sound.success();
@@ -466,7 +471,7 @@ if (window.__OMNICAST_INITIALIZED__) {
         // 2. Partner accepted! (Viewer receives this)
         else if (data.type === 'accepted') {
           el.loaderTitle.textContent = 'Starting video stream...';
-          el.loaderSubtitle.textContent = 'Getting 60 FPS live picture & input channel';
+          el.loaderSubtitle.textContent = 'Streaming 60 FPS ultra-low latency WebRTC';
           sound.success();
         }
 
@@ -509,7 +514,6 @@ if (window.__OMNICAST_INITIALIZED__) {
           const ev = data.event;
           if (!ev) return;
 
-          // Relay to Native Windows OS Controller if local server is running
           relayToNativeHost(ev);
 
           // Update Visual Cursor Overlay on Host Screen
@@ -526,7 +530,7 @@ if (window.__OMNICAST_INITIALIZED__) {
             showHostKeyHUD(`🖱️ Remote: ${btnName}`);
             sound.play(600, 0.05);
           } else if (ev.type === 'keydown') {
-            const keyLabel = ev.key.length === 1 ? `"${ev.key}"` : `[${ev.key}]`;
+            const keyLabel = ev.key && ev.key.length === 1 ? `"${ev.key}"` : `[${ev.key}]`;
             showHostKeyHUD(`⌨️ Remote Typed: ${keyLabel}`);
             sound.play(540, 0.04);
           }
@@ -542,7 +546,7 @@ if (window.__OMNICAST_INITIALIZED__) {
         // 9. Custom String Typing (Viewer -> Host)
         else if (data.type === 'type-string') {
           showHostKeyHUD(`⌨️ Remote Typed: "${data.text}"`);
-          if (data.text) {
+          if (data.text && state.hasServerApi) {
             for (let i = 0; i < data.text.length; i++) {
               const char = data.text[i];
               setTimeout(() => {
@@ -645,7 +649,7 @@ if (window.__OMNICAST_INITIALIZED__) {
 
         state.connectTimeoutTimer = setTimeout(() => {
           if (!el.sessionView.classList.contains('hidden') && el.loaderOverlay.classList.contains('hidden') === false) {
-            showToast('Could not connect: Your partner might be offline.', 'error');
+            showToast('Connection timed out. Partner may be offline.', 'error');
             resetConnectButton();
           }
         }, 18000);
@@ -687,16 +691,28 @@ if (window.__OMNICAST_INITIALIZED__) {
       el.modalIncoming.classList.add('hidden');
 
       try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: { ideal: 60, max: 60 } },
-          audio: true
-        });
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
+            audio: false
+          });
+        } catch (e1) {
+          try {
+            stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          } catch (e2) {
+            stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+          }
+        }
+
         state.localStream = stream;
         state.isHost = true;
 
-        stream.getVideoTracks()[0].onended = () => {
-          stopAllSessions('You stopped sharing your screen.');
-        };
+        if (stream.getVideoTracks() && stream.getVideoTracks()[0]) {
+          stream.getVideoTracks()[0].onended = () => {
+            stopAllSessions('You stopped sharing your screen.');
+          };
+        }
 
         if (state.activeConn) {
           state.activeCall = state.peer.call(state.activeConn.peer, stream);
@@ -707,7 +723,7 @@ if (window.__OMNICAST_INITIALIZED__) {
         el.hostNoticeSub.textContent = `Partner controlling: ${el.incomingFriendCode.textContent}`;
 
         sound.success();
-        showToast('Screen sharing & remote control is LIVE!', 'success');
+        showToast('Screen streaming & remote control is LIVE!', 'success');
         startPingHeartbeat();
         if (state.targetCode) saveRecentConnection(state.targetCode);
 
@@ -716,11 +732,7 @@ if (window.__OMNICAST_INITIALIZED__) {
         if (state.activeConn) {
           state.activeConn.send({ type: 'cancelled' });
         }
-        if (window.location.protocol === 'file:') {
-          showToast('Browsers block screen sharing on file://. Double-click start.bat!', 'error');
-        } else {
-          showToast('Screen share permission cancelled', 'info');
-        }
+        showToast('Screen share permission cancelled or not allowed', 'info');
       }
     }
 
@@ -734,13 +746,41 @@ if (window.__OMNICAST_INITIALIZED__) {
     }
 
     // =========================================================================
-    // Real-Time Mouse & Keyboard Input Transmission (Viewer -> Host)
+    // Real-Time Mouse & Keyboard Input Transmission (Letterbox Corrected)
     // =========================================================================
     function getNormalizedCoords(e) {
-      const rect = el.remoteVideo.getBoundingClientRect();
+      const video = el.remoteVideo;
+      const rect = video.getBoundingClientRect();
       if (!rect.width || !rect.height) return null;
-      const xPercent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const yPercent = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+      const clientX = e.clientX - rect.left;
+      const clientY = e.clientY - rect.top;
+
+      const videoWidth = video.videoWidth || rect.width;
+      const videoHeight = video.videoHeight || rect.height;
+
+      const videoRatio = videoWidth / videoHeight;
+      const elementRatio = rect.width / rect.height;
+
+      let actualWidth = rect.width;
+      let actualHeight = rect.height;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (elementRatio > videoRatio) {
+        actualWidth = rect.height * videoRatio;
+        offsetX = (rect.width - actualWidth) / 2;
+      } else {
+        actualHeight = rect.width / videoRatio;
+        offsetY = (rect.height - actualHeight) / 2;
+      }
+
+      const relativeX = clientX - offsetX;
+      const relativeY = clientY - offsetY;
+
+      const xPercent = Math.max(0, Math.min(1, relativeX / actualWidth));
+      const yPercent = Math.max(0, Math.min(1, relativeY / actualHeight));
+
       return { xPercent, yPercent };
     }
 
@@ -885,11 +925,8 @@ if (window.__OMNICAST_INITIALIZED__) {
     // UI Event Bindings
     // =========================================================================
     function bindUI() {
-      // file:// Scheme Check & Dismissal
-      if (window.location.protocol === 'file:') {
-        if (el.fileSchemeBanner) el.fileSchemeBanner.classList.remove('hidden');
-      }
-      if (el.btnDismissScheme) {
+      // Dismiss file banner if present
+      if (el.btnDismissScheme && el.fileSchemeBanner) {
         el.btnDismissScheme.addEventListener('click', () => el.fileSchemeBanner.classList.add('hidden'));
       }
 
@@ -916,7 +953,7 @@ if (window.__OMNICAST_INITIALIZED__) {
         showToast('Generated a new code!', 'info');
       });
 
-      // Partner Code Input: Auto-formats to XXX XXX
+      // Partner Code Input
       el.targetCodeInput.addEventListener('input', (e) => {
         const clean = cleanDigits(e.target.value);
         e.target.value = formatDisplay(clean);
@@ -937,7 +974,7 @@ if (window.__OMNICAST_INITIALIZED__) {
         el.btnToggleControl.classList.add('active');
         el.btnTogglePointer.classList.remove('active');
         el.remoteVideo.classList.add('control-active');
-        showToast('🎮 Remote Control Mode: Live Mouse & Keyboard ON', 'info');
+        showToast('🎮 Remote Control: Live Mouse & Keyboard Active', 'info');
       });
 
       el.btnTogglePointer.addEventListener('click', () => {
@@ -945,7 +982,7 @@ if (window.__OMNICAST_INITIALIZED__) {
         el.btnTogglePointer.classList.add('active');
         el.btnToggleControl.classList.remove('active');
         el.remoteVideo.classList.remove('control-active');
-        showToast('🔴 Laser Highlight Mode: Presentation Pointer ON', 'info');
+        showToast('🔴 Laser Highlight Mode Active', 'info');
       });
 
       // Special Keys Dropdown Toggle
@@ -1004,7 +1041,6 @@ if (window.__OMNICAST_INITIALIZED__) {
         if (!coords) return;
 
         if (state.mode === 'laser') {
-          // Send laser highlight
           if (state.activeConn && state.activeConn.open) {
             laserPoint = { x: coords.xPercent, y: coords.yPercent, time: Date.now() };
             state.activeConn.send({
@@ -1015,7 +1051,6 @@ if (window.__OMNICAST_INITIALIZED__) {
             });
           }
         } else {
-          // Throttle control movement to 60fps (16ms)
           const now = Date.now();
           if (now - state.lastMouseMoveTime > 16) {
             state.lastMouseMoveTime = now;
@@ -1089,13 +1124,11 @@ if (window.__OMNICAST_INITIALIZED__) {
         });
       }, { passive: false });
 
-      // Keyboard Capture on Session View Container
+      // Keyboard Capture
       window.addEventListener('keydown', (e) => {
         if (el.sessionView.classList.contains('hidden') || state.mode !== 'control') return;
-        // If user is currently typing in chat input or text sender, don't trap
         if (document.activeElement === el.chatInput || document.activeElement === el.textSenderInput) return;
 
-        // Prevent common browser navigation keys from leaving session
         if (['Tab', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
           e.preventDefault();
         }
@@ -1166,7 +1199,7 @@ if (window.__OMNICAST_INITIALIZED__) {
       renderRecentChips();
       checkLocalInputServer();
       initPeer();
-      console.log('[OmniCast Remote Desktop] Ready.');
+      console.log('[OmniCast Remote Desktop] Live & Ready.');
     }
 
     if (document.readyState === 'loading') {
