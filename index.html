@@ -51,6 +51,16 @@
       flex-direction: column;
     }
     .hidden { display: none !important; }
+    .file-scheme-banner {
+      background: #7c2d12; border-bottom: 1px solid #ea580c; color: #ffedd5;
+      padding: 0.6rem 1.25rem; font-size: 0.82rem; text-align: center;
+      display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+    }
+    .file-scheme-banner b { color: #fff; }
+    .btn-scheme-help {
+      background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.75rem; color: #fff; cursor: pointer;
+    }
     .app-header {
       border-bottom: 1px solid var(--border-card);
       background: rgba(9, 13, 22, 0.95);
@@ -201,6 +211,8 @@
       color: #fff; font-weight: 700; font-size: 0.75rem; display: flex; align-items: center; justify-content: center;
     }
     .step-arrow { color: var(--text-dim); font-weight: 700; }
+    
+    /* Active Session View */
     .session-view {
       position: fixed; inset: 0; z-index: 100; background: #000;
       display: flex; flex-direction: column; overflow: hidden;
@@ -208,7 +220,8 @@
     .video-container {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #000;
     }
-    .remote-video { width: 100%; height: 100%; object-fit: contain; cursor: crosshair; }
+    .remote-video { width: 100%; height: 100%; object-fit: contain; cursor: default; }
+    .remote-video.control-active { cursor: crosshair; }
     .laser-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 105; }
     .loader-overlay {
       position: absolute; inset: 0; background: rgba(9, 13, 22, 0.95);
@@ -228,6 +241,8 @@
       padding: 0.6rem 1.25rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     }
     .btn-cancel:hover { background: #475569; }
+    
+    /* Session Floating Bottom Bar */
     .session-bar { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); z-index: 130; }
     .bar-pill {
       display: flex; align-items: center; gap: 1.25rem; padding: 0.6rem 1.25rem;
@@ -241,7 +256,7 @@
       font-family: var(--font-mono); font-size: 0.72rem; padding: 0.15rem 0.45rem;
       background: rgba(255, 255, 255, 0.08); border-radius: 6px; color: var(--text-gray);
     }
-    .bar-buttons { display: flex; align-items: center; gap: 0.45rem; }
+    .bar-buttons { display: flex; align-items: center; gap: 0.45rem; position: relative; }
     .pill-btn {
       display: inline-flex; align-items: center; gap: 0.4rem;
       background: rgba(255, 255, 255, 0.08); color: var(--text-white);
@@ -264,6 +279,8 @@
       transition: background-color 0.15s ease;
     }
     .btn-leave:hover { background: var(--accent-coral-hover); }
+    
+    /* Host Floating Notice */
     .host-notice { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 150; }
     .host-notice-box {
       display: flex; align-items: center; gap: 1rem; background: #1e293b;
@@ -282,6 +299,57 @@
       padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 700; cursor: pointer;
     }
     .btn-host-stop:hover { background: var(--accent-coral-hover); }
+
+    /* Host Remote Cursor Simulation */
+    .remote-host-cursor {
+      position: fixed; pointer-events: none; z-index: 9999;
+      transform: translate(-2px, -2px); transition: transform 0.04s linear;
+    }
+    .cursor-pointer-icon {
+      width: 24px; height: 24px;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6));
+    }
+    .cursor-tag {
+      background: var(--accent-coral); color: #fff; font-size: 0.7rem; font-weight: 700;
+      padding: 0.15rem 0.45rem; border-radius: 4px; position: absolute; left: 16px; top: 14px;
+      white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .host-key-hud {
+      position: fixed; bottom: 5.5rem; left: 50%; transform: translateX(-50%);
+      background: rgba(17, 24, 39, 0.94); border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 9999px; padding: 0.4rem 1.1rem; font-family: var(--font-mono);
+      font-size: 0.82rem; font-weight: 700; color: #38bdf8; z-index: 9999;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5); pointer-events: none;
+      animation: toastFade 0.15s ease-out;
+    }
+    .keys-popover {
+      position: absolute; bottom: 3.8rem; right: 0; background: #1e293b;
+      border: 1px solid var(--border-card); border-radius: 12px; padding: 0.6rem;
+      display: flex; flex-direction: column; gap: 0.4rem; width: 230px;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.7); z-index: 150;
+    }
+    .key-btn {
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border-card);
+      border-radius: 8px; color: #fff; font-size: 0.82rem; font-weight: 600;
+      padding: 0.45rem 0.75rem; text-align: left; cursor: pointer; transition: all 0.12s ease;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .key-btn:hover { background: var(--accent-blue-bg); border-color: rgba(59,130,246,0.3); color: #60a5fa; }
+    .key-badge {
+      font-family: var(--font-mono); font-size: 0.68rem; background: rgba(0,0,0,0.4);
+      padding: 0.1rem 0.35rem; border-radius: 4px; color: var(--text-gray);
+    }
+    .text-sender-row { display: flex; gap: 0.35rem; margin-top: 0.35rem; }
+    .text-sender-input {
+      flex: 1; background: #090d16; border: 1px solid var(--border-card);
+      border-radius: 6px; padding: 0.35rem 0.5rem; font-size: 0.78rem; color: #fff; outline: none;
+    }
+    .btn-send-text {
+      background: var(--accent-blue); border: none; border-radius: 6px;
+      color: #fff; font-size: 0.75rem; font-weight: 700; padding: 0 0.6rem; cursor: pointer;
+    }
+    
+    /* Incoming Modal */
     .modal-backdrop {
       position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
       z-index: 200; display: flex; align-items: center; justify-content: center; padding: 1.5rem;
@@ -311,6 +379,8 @@
       cursor: pointer; box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35);
     }
     .btn-modal-accept:hover { filter: brightness(1.08); }
+    
+    /* Chat Drawer */
     .chat-drawer {
       position: fixed; top: 0; right: 0; bottom: 0; width: 350px; max-width: 90vw;
       background: #1e293b; border-left: 1px solid var(--border-card); z-index: 160;
@@ -344,6 +414,8 @@
       background: var(--accent-blue); color: #fff; border: none; border-radius: 10px;
       padding: 0.65rem 1rem; font-size: 0.88rem; font-weight: 700; cursor: pointer;
     }
+    
+    /* File Banner */
     .file-banner { position: fixed; bottom: 6rem; right: 2rem; z-index: 140; }
     .file-banner-content {
       display: flex; align-items: center; gap: 1rem; background: #1e293b;
@@ -360,6 +432,8 @@
     .progress-fill { height: 100%; background: var(--accent-green); transition: width 0.1s linear; }
     .file-status { font-size: 0.72rem; color: var(--text-gray); }
     .btn-close-file { background: none; border: none; color: var(--text-dim); font-size: 1rem; cursor: pointer; }
+    
+    /* Toast */
     .toast-container {
       position: fixed; top: 1.5rem; right: 1.5rem; z-index: 300;
       display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none;
@@ -378,6 +452,12 @@
 </head>
 <body>
 
+  <!-- Notice when running via file:// -->
+  <div id="fileSchemeBanner" class="file-scheme-banner hidden">
+    <span>⚠️ Running directly via file://. For live OS mouse & keyboard control without browser limits, run <b>start.bat</b> or use http://localhost:3000!</span>
+    <button id="btnDismissScheme" class="btn-scheme-help" type="button">Dismiss</button>
+  </div>
+
   <!-- Top Simple Header -->
   <header class="app-header">
     <div class="header-inner">
@@ -385,12 +465,12 @@
         <img src="logo.png" alt="OmniCast" class="brand-logo" onerror="this.style.display='none'">
         <div>
           <span class="brand-name">OmniCast</span>
-          <span class="brand-desc">AnyDesk-Style Web Screen Sharing</span>
+          <span class="brand-desc">AnyDesk-Style Web Screen Sharing & Control</span>
         </div>
       </div>
       <div id="connectionStatus" class="status-badge status-online">
         <span class="status-dot"></span>
-        <span id="statusLabel">Network Online</span>
+        <span id="statusLabel">Ready</span>
       </div>
     </div>
   </header>
@@ -400,9 +480,9 @@
     <div class="container">
       
       <div class="welcome-text">
-        <div class="hero-tag">Direct Peer-to-Peer WebRTC</div>
-        <h1>Instant Remote Screen Streaming</h1>
-        <p>No downloads or plugins. Share your screen or connect to a remote computer with ultra-low latency.</p>
+        <div class="hero-tag">Direct WebRTC Remote Desktop</div>
+        <h1>Instant Remote Screen Streaming & Control</h1>
+        <p>Zero plugins required. Share your screen or connect to a remote partner with full mouse, keyboard, and laser support.</p>
       </div>
 
       <div class="cards-wrapper">
@@ -415,7 +495,7 @@
 
           <div class="card-headings">
             <h2>This Desk (Share Screen)</h2>
-            <p>Tell your partner this 6-digit number so they can see your computer screen.</p>
+            <p>Tell your partner this 6-digit number so they can see and control your computer.</p>
           </div>
 
           <!-- Big Bold Code Box -->
@@ -440,8 +520,8 @@
           </div>
 
           <div class="card-headings">
-            <h2>Remote Desk (View Partner)</h2>
-            <p>Type your partner's 6-digit number below to connect to their computer.</p>
+            <h2>Remote Desk (Control Partner)</h2>
+            <p>Type your partner's 6-digit number below to view and control their computer.</p>
           </div>
 
           <!-- Code Input Box -->
@@ -492,7 +572,7 @@
         <div class="step-arrow">→</div>
         <div class="step-item">
           <span class="step-num">3</span>
-          <span>Click Allow on host to start viewing</span>
+          <span>Click Allow on host to start viewing & controlling</span>
         </div>
       </div>
 
@@ -502,9 +582,9 @@
   <!-- FULLSCREEN SESSION VIEWER (When Connected) -->
   <div id="sessionView" class="session-view hidden">
     
-    <!-- Remote Video -->
-    <div id="videoContainer" class="video-container">
-      <video id="remoteVideo" autoplay playsinline class="remote-video"></video>
+    <!-- Remote Video Canvas Container -->
+    <div id="videoContainer" class="video-container" tabindex="0">
+      <video id="remoteVideo" autoplay playsinline class="remote-video control-active"></video>
       <canvas id="laserCanvas" class="laser-canvas"></canvas>
 
       <!-- Connecting Overlay -->
@@ -522,16 +602,48 @@
         
         <div class="bar-user-info">
           <span class="live-dot"></span>
-          <span id="sessionPartnerName">Watching Remote Screen</span>
+          <span id="sessionPartnerName">Remote Screen</span>
           <span id="sessionPing" class="ping-badge">-- ms</span>
         </div>
 
         <div class="bar-buttons">
+          <!-- Control Mode Toggle -->
+          <button id="btnToggleControl" class="pill-btn active" type="button" title="Live Mouse & Keyboard Control">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"></rect><line x1="6" y1="12" x2="10" y2="12"></line><line x1="8" y1="10" x2="8" y2="14"></line><circle cx="15" cy="11" r="1"></circle><circle cx="18" cy="13" r="1"></circle></svg>
+            <span>Control</span>
+          </button>
+
           <!-- Laser Pointer Toggle -->
-          <button id="btnTogglePointer" class="pill-btn active" type="button" title="Remote Laser Pointer">
+          <button id="btnTogglePointer" class="pill-btn" type="button" title="Remote Laser Pointer">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
             <span>Laser</span>
           </button>
+
+          <!-- Special Keys Menu Button -->
+          <button id="btnSpecialKeys" class="pill-btn" type="button" title="Send Special Keys">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M18 12h.01M8 16h8"></path></svg>
+            <span>Keys ⌨️</span>
+          </button>
+
+          <!-- Keys Dropdown Popover -->
+          <div id="keysDropdown" class="keys-popover hidden">
+            <button id="btnKeyCAD" class="key-btn" type="button">
+              <span>Ctrl + Alt + Del</span>
+              <span class="key-badge">Task Mgr</span>
+            </button>
+            <button id="btnKeyWin" class="key-btn" type="button">
+              <span>Windows Key</span>
+              <span class="key-badge">Start</span>
+            </button>
+            <button id="btnKeyAltTab" class="key-btn" type="button">
+              <span>Alt + Tab</span>
+              <span class="key-badge">Switch</span>
+            </button>
+            <div class="text-sender-row">
+              <input type="text" id="textSenderInput" class="text-sender-input" placeholder="Type text to send..." autocomplete="off">
+              <button id="btnSendTextToRemote" class="btn-send-text" type="button">Send</button>
+            </div>
+          </div>
 
           <!-- Chat Button -->
           <button id="btnOpenChat" class="pill-btn" type="button" title="Open Chat">
@@ -543,7 +655,7 @@
           <!-- Send File Button -->
           <button id="btnOpenFile" class="pill-btn" type="button" title="Send File">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-            <span>Send File</span>
+            <span>File</span>
           </button>
           <input type="file" id="filePickerInput" class="hidden">
 
@@ -555,7 +667,7 @@
           <!-- Leave Call / Stop Button -->
           <button id="btnStopSession" class="btn-leave" type="button">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
-            <span>Stop Watching</span>
+            <span>Disconnect</span>
           </button>
         </div>
 
@@ -570,7 +682,7 @@
       <span class="red-record-dot"></span>
       <div>
         <div class="host-notice-title">You are sharing your screen!</div>
-        <div id="hostNoticeSub" class="host-notice-sub">Partner connected</div>
+        <div id="hostNoticeSub" class="host-notice-sub">Partner controlling</div>
       </div>
       <button id="btnHostStop" class="btn-host-stop" type="button">Stop Sharing</button>
     </div>
@@ -580,13 +692,13 @@
   <div id="modalIncoming" class="modal-backdrop hidden">
     <div class="modal-card">
       <div class="modal-emoji">💻</div>
-      <h3>Your partner wants to view your screen!</h3>
+      <h3>Your partner wants to view and control your screen!</h3>
       <p>Partner Code: <b id="incomingFriendCode" class="highlight-code">000 000</b></p>
-      <p class="modal-explainer">When you click "Allow", your browser will ask you to choose which screen or window to stream.</p>
+      <p class="modal-explainer">When you click "Allow", your browser will ask you to choose which screen or window to stream. Remote mouse and keyboard control will be enabled.</p>
       
       <div class="modal-buttons">
         <button id="btnDecline" class="btn-modal-decline" type="button">No, Decline</button>
-        <button id="btnAccept" class="btn-modal-accept" type="button">Yes, Allow Screen Share</button>
+        <button id="btnAccept" class="btn-modal-accept" type="button">Yes, Allow Control</button>
       </div>
     </div>
   </div>
@@ -624,6 +736,19 @@
       </div>
       <button id="btnCloseFileBanner" class="btn-close-file" type="button">✕</button>
     </div>
+  </div>
+
+  <!-- REMOTE CURSOR OVERLAY ON HOST SCREEN -->
+  <div id="hostRemoteCursor" class="remote-host-cursor hidden">
+    <svg class="cursor-pointer-icon" viewBox="0 0 24 24" fill="#ef4444" stroke="#ffffff" stroke-width="1.5">
+      <path d="M3 3l7 18 3-7 7-3L3 3z"></path>
+    </svg>
+    <div id="remoteCursorTag" class="cursor-tag">Remote Partner</div>
+  </div>
+
+  <!-- HOST KEYSTROKE HUD NOTIFICATION -->
+  <div id="hostKeyHUD" class="host-key-hud hidden">
+    <span id="hostKeyHUDText">⌨️ Remote Key: Enter</span>
   </div>
 
   <!-- SIMPLE TOAST ALERTS -->

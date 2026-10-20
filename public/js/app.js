@@ -1,17 +1,17 @@
 /**
- * OmniCast — Simple, Clean & 100% Functional Screen Sharing
- * Built with PeerJS & WebRTC with Public Google STUN servers.
+ * OmniCast — 100% Functional WebRTC Remote Desktop (AnyDesk Grade)
+ * Full Mouse, Keyboard, Wheel, Special Keys & Native Host OS Bridge.
  */
 
 if (window.__OMNICAST_INITIALIZED__) {
-  console.warn('[OmniCast] Script already initialized, skipping duplicate execution.');
+  console.warn('[OmniCast] Already initialized.');
 } else {
   window.__OMNICAST_INITIALIZED__ = true;
 
   (() => {
     'use strict';
 
-    // Public Google & OpenRelay STUN servers for reliable cross-network connection
+    // Public Google & OpenRelay STUN servers for cross-network WebRTC
     const PEER_CONFIG = {
       config: {
         iceServers: [
@@ -32,18 +32,21 @@ if (window.__OMNICAST_INITIALIZED__) {
       myCode: null,
       targetCode: null,
       isHost: false,
-      activeConn: null, // DataConnection
+      activeConn: null, // RTCDataConnection
       activeCall: null, // MediaConnection
       localStream: null, // Host Screen MediaStream
       incomingFile: null,
       unreadChatCount: 0,
       isChatOpen: false,
-      isLaserActive: true,
+      isKeysOpen: false,
+      mode: 'control', // 'control' | 'laser'
       pingInterval: null,
-      connectTimeoutTimer: null
+      connectTimeoutTimer: null,
+      lastMouseMoveTime: 0,
+      hasServerApi: false
     };
 
-    // Simple Audio Beeps (Zero dependencies)
+    // Simple Audio Chimes (Zero dependencies)
     const sound = {
       ctx: null,
       play(freq, dur) {
@@ -79,6 +82,8 @@ if (window.__OMNICAST_INITIALIZED__) {
 
     // DOM Elements
     const el = {
+      fileSchemeBanner: document.getElementById('fileSchemeBanner'),
+      btnDismissScheme: document.getElementById('btnDismissScheme'),
       connectionStatus: document.getElementById('connectionStatus'),
       statusLabel: document.getElementById('statusLabel'),
       mainView: document.getElementById('mainView'),
@@ -94,7 +99,7 @@ if (window.__OMNICAST_INITIALIZED__) {
       recentContainer: document.getElementById('recentContainer'),
       recentChips: document.getElementById('recentChips'),
       
-      // Session
+      // Active Session
       sessionView: document.getElementById('sessionView'),
       videoContainer: document.getElementById('videoContainer'),
       remoteVideo: document.getElementById('remoteVideo'),
@@ -105,7 +110,21 @@ if (window.__OMNICAST_INITIALIZED__) {
       btnCancelConnect: document.getElementById('btnCancelConnect'),
       sessionPartnerName: document.getElementById('sessionPartnerName'),
       sessionPing: document.getElementById('sessionPing'),
+      
+      // Control & Laser Modes
+      btnToggleControl: document.getElementById('btnToggleControl'),
       btnTogglePointer: document.getElementById('btnTogglePointer'),
+
+      // Special Keys
+      btnSpecialKeys: document.getElementById('btnSpecialKeys'),
+      keysDropdown: document.getElementById('keysDropdown'),
+      btnKeyCAD: document.getElementById('btnKeyCAD'),
+      btnKeyWin: document.getElementById('btnKeyWin'),
+      btnKeyAltTab: document.getElementById('btnKeyAltTab'),
+      textSenderInput: document.getElementById('textSenderInput'),
+      btnSendTextToRemote: document.getElementById('btnSendTextToRemote'),
+
+      // Chat & File
       btnOpenChat: document.getElementById('btnOpenChat'),
       chatBadge: document.getElementById('chatBadge'),
       btnOpenFile: document.getElementById('btnOpenFile'),
@@ -113,12 +132,16 @@ if (window.__OMNICAST_INITIALIZED__) {
       btnFullscreen: document.getElementById('btnFullscreen'),
       btnStopSession: document.getElementById('btnStopSession'),
 
-      // Host Floating Notice
+      // Host Screen Overlays
       hostNotice: document.getElementById('hostNotice'),
       hostNoticeSub: document.getElementById('hostNoticeSub'),
       btnHostStop: document.getElementById('btnHostStop'),
+      hostRemoteCursor: document.getElementById('hostRemoteCursor'),
+      remoteCursorTag: document.getElementById('remoteCursorTag'),
+      hostKeyHUD: document.getElementById('hostKeyHUD'),
+      hostKeyHUDText: document.getElementById('hostKeyHUDText'),
 
-      // Incoming Permission Modal
+      // Incoming Modal
       modalIncoming: document.getElementById('modalIncoming'),
       incomingFriendCode: document.getElementById('incomingFriendCode'),
       btnAccept: document.getElementById('btnAccept'),
@@ -138,7 +161,6 @@ if (window.__OMNICAST_INITIALIZED__) {
       fileStatusText: document.getElementById('fileStatusText'),
       btnCloseFileBanner: document.getElementById('btnCloseFileBanner'),
 
-      // Toast Container
       toastContainer: document.getElementById('toastContainer')
     };
 
@@ -175,12 +197,11 @@ if (window.__OMNICAST_INITIALIZED__) {
       if (!laserCtx || !el.laserCanvas) return;
       laserCtx.clearRect(0, 0, el.laserCanvas.width, el.laserCanvas.height);
 
-      // Render Active Laser Point
+      // Render Laser Point
       if (laserPoint && (Date.now() - laserPoint.time < 1200)) {
         const x = laserPoint.x * el.laserCanvas.width;
         const y = laserPoint.y * el.laserCanvas.height;
 
-        // Outer glow
         const radGrad = laserCtx.createRadialGradient(x, y, 0, x, y, 22);
         radGrad.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
         radGrad.addColorStop(0.4, 'rgba(239, 68, 68, 0.4)');
@@ -190,18 +211,17 @@ if (window.__OMNICAST_INITIALIZED__) {
         laserCtx.arc(x, y, 22, 0, Math.PI * 2);
         laserCtx.fill();
 
-        // Inner sharp dot
         laserCtx.fillStyle = '#ffffff';
         laserCtx.beginPath();
         laserCtx.arc(x, y, 4, 0, Math.PI * 2);
         laserCtx.fill();
       }
 
-      // Render Expanding Click Ripples
+      // Render Ripples
       const now = Date.now();
       for (let i = ripples.length - 1; i >= 0; i--) {
         const r = ripples[i];
-        const progress = (now - r.start) / 600; // 600ms duration
+        const progress = (now - r.start) / 600;
         if (progress >= 1) {
           ripples.splice(i, 1);
           continue;
@@ -251,6 +271,32 @@ if (window.__OMNICAST_INITIALIZED__) {
       }, 3500);
     }
 
+    // Check Local Node Input Server Availability
+    async function checkLocalInputServer() {
+      try {
+        const res = await fetch('/api/status', { method: 'GET' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.osControlAvailable) {
+            state.hasServerApi = true;
+            console.log('[OmniCast] Native Windows OS Controller is READY!');
+          }
+        }
+      } catch (e) {
+        state.hasServerApi = false;
+      }
+    }
+
+    // Dispatch Remote Event to Native Windows OS via server.js
+    function relayToNativeHost(event) {
+      if (!state.isHost) return;
+      fetch('/api/host-input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event })
+      }).catch(() => {});
+    }
+
     // Recent Connections Management
     function getRecentConnections() {
       try {
@@ -293,7 +339,7 @@ if (window.__OMNICAST_INITIALIZED__) {
       });
     }
 
-    // Ping / Latency Heartbeat
+    // Ping / Latency Monitor
     function startPingHeartbeat() {
       stopPingHeartbeat();
       state.pingInterval = setInterval(() => {
@@ -340,7 +386,7 @@ if (window.__OMNICAST_INITIALIZED__) {
           el.connectionStatus.className = 'status-badge status-online';
         });
 
-        // Handle Errors
+        // Error Handling
         state.peer.on('error', (err) => {
           console.warn('[PeerJS]', err.type, err.message);
           if (err.type === 'unavailable-id') {
@@ -350,12 +396,12 @@ if (window.__OMNICAST_INITIALIZED__) {
             el.myCodeDisplay.textContent = formatDisplay(fresh);
             initPeer();
           } else if (err.type === 'peer-unavailable') {
-            showToast('That code is offline. Check with your friend!', 'error');
+            showToast('That code is offline. Check with your partner!', 'error');
             resetConnectButton();
           }
         });
 
-        // HOST: Listen for incoming connection from a friend
+        // HOST: Listen for incoming connection from partner
         state.peer.on('connection', (conn) => {
           console.log('[Incoming Connection from]', conn.peer);
           state.activeConn = conn;
@@ -373,14 +419,15 @@ if (window.__OMNICAST_INITIALIZED__) {
             el.remoteVideo.srcObject = stream;
             el.remoteVideo.play().catch(e => console.log('Autoplay hint:', e));
             el.loaderOverlay.classList.add('hidden');
+            el.videoContainer.focus();
             sound.success();
-            showToast('Connected! You are now watching their screen.', 'success');
+            showToast('Connected! You are viewing & controlling remote screen.', 'success');
             startPingHeartbeat();
             if (state.targetCode) saveRecentConnection(state.targetCode);
           });
 
           call.on('close', () => {
-            stopAllSessions('Your friend stopped sharing their screen.');
+            stopAllSessions('Your partner stopped sharing their screen.');
           });
         });
 
@@ -390,13 +437,24 @@ if (window.__OMNICAST_INITIALIZED__) {
     }
 
     // =========================================================================
-    // Data Channel Messaging (Chat, File, Handshake, Ping, Laser)
+    // Data Channel Messaging (Chat, File, Input Relay, Ping, Laser)
     // =========================================================================
+    let hudTimer = null;
+    function showHostKeyHUD(text) {
+      if (!el.hostKeyHUD) return;
+      el.hostKeyHUDText.textContent = text;
+      el.hostKeyHUD.classList.remove('hidden');
+      if (hudTimer) clearTimeout(hudTimer);
+      hudTimer = setTimeout(() => {
+        el.hostKeyHUD.classList.add('hidden');
+      }, 1400);
+    }
+
     function listenToDataChannel(conn) {
       conn.on('data', (data) => {
         if (!data) return;
 
-        // 1. Friend asks permission to connect (Host receives this)
+        // 1. Partner asks permission (Host receives this)
         if (data.type === 'ask-permission') {
           const callerCode = data.fromCode || conn.peer.replace('omni-', '');
           state.targetCode = callerCode;
@@ -405,32 +463,30 @@ if (window.__OMNICAST_INITIALIZED__) {
           el.modalIncoming.classList.remove('hidden');
         }
 
-        // 2. Friend accepted! (Viewer receives this)
+        // 2. Partner accepted! (Viewer receives this)
         else if (data.type === 'accepted') {
           el.loaderTitle.textContent = 'Starting video stream...';
-          el.loaderSubtitle.textContent = 'Getting 60 FPS live picture';
+          el.loaderSubtitle.textContent = 'Getting 60 FPS live picture & input channel';
           sound.success();
         }
 
-        // 3. Friend declined (Viewer receives this)
+        // 3. Partner declined
         else if (data.type === 'declined') {
           sound.end();
-          showToast('Your friend declined the screen share request.', 'warning');
+          showToast('Your partner declined the screen share request.', 'warning');
           resetConnectButton();
         }
 
-        // 4. Friend cancelled screen selection
+        // 4. Partner cancelled screen selection
         else if (data.type === 'cancelled') {
           sound.end();
-          showToast('Your friend cancelled screen selection.', 'warning');
+          showToast('Your partner cancelled screen selection.', 'warning');
           resetConnectButton();
         }
 
         // 5. Ping & Pong
         else if (data.type === 'ping') {
-          if (conn.open) {
-            conn.send({ type: 'pong', t: data.t });
-          }
+          if (conn.open) conn.send({ type: 'pong', t: data.t });
         } else if (data.type === 'pong') {
           const rtt = Math.max(1, Math.round(Date.now() - data.t));
           if (el.sessionPing) {
@@ -439,7 +495,7 @@ if (window.__OMNICAST_INITIALIZED__) {
           }
         }
 
-        // 6. Laser Pointer Event (Normalized 0.0 - 1.0)
+        // 6. Laser Pointer Event (Viewer -> Host)
         else if (data.type === 'laser') {
           laserPoint = { x: data.x, y: data.y, time: Date.now() };
           if (data.click) {
@@ -448,7 +504,57 @@ if (window.__OMNICAST_INITIALIZED__) {
           }
         }
 
-        // 7. Chat message received
+        // 7. Remote Input Event (Mouse / Keyboard Relay to Host)
+        else if (data.type === 'input') {
+          const ev = data.event;
+          if (!ev) return;
+
+          // Relay to Native Windows OS Controller if local server is running
+          relayToNativeHost(ev);
+
+          // Update Visual Cursor Overlay on Host Screen
+          if (ev.type === 'mousemove') {
+            if (el.hostRemoteCursor) {
+              el.hostRemoteCursor.classList.remove('hidden');
+              const screenX = ev.xPercent * window.innerWidth;
+              const screenY = ev.yPercent * window.innerHeight;
+              el.hostRemoteCursor.style.left = `${screenX}px`;
+              el.hostRemoteCursor.style.top = `${screenY}px`;
+            }
+          } else if (ev.type === 'mousedown') {
+            const btnName = ev.button === 2 ? 'Right Click' : (ev.button === 1 ? 'Middle Click' : 'Left Click');
+            showHostKeyHUD(`🖱️ Remote: ${btnName}`);
+            sound.play(600, 0.05);
+          } else if (ev.type === 'keydown') {
+            const keyLabel = ev.key.length === 1 ? `"${ev.key}"` : `[${ev.key}]`;
+            showHostKeyHUD(`⌨️ Remote Typed: ${keyLabel}`);
+            sound.play(540, 0.04);
+          }
+        }
+
+        // 8. Special Key Commands (CAD, WIN, ALTTAB)
+        else if (data.type === 'special-key') {
+          relayToNativeHost({ type: 'special', action: data.action });
+          showHostKeyHUD(`⚡ Remote Special: [${data.action}]`);
+          sound.play(700, 0.08);
+        }
+
+        // 9. Custom String Typing (Viewer -> Host)
+        else if (data.type === 'type-string') {
+          showHostKeyHUD(`⌨️ Remote Typed: "${data.text}"`);
+          if (data.text) {
+            for (let i = 0; i < data.text.length; i++) {
+              const char = data.text[i];
+              setTimeout(() => {
+                relayToNativeHost({ type: 'keydown', key: char, keyCode: char.charCodeAt(0) });
+                relayToNativeHost({ type: 'keyup', key: char, keyCode: char.charCodeAt(0) });
+              }, i * 30);
+            }
+          }
+          sound.success();
+        }
+
+        // 10. Live Chat
         else if (data.type === 'chat') {
           appendChatMessage(data.text, 'theirs');
           if (!state.isChatOpen) {
@@ -459,7 +565,7 @@ if (window.__OMNICAST_INITIALIZED__) {
           }
         }
 
-        // 8. File transfer
+        // 11. Chunked File Transfer
         else if (data.type === 'file-start') {
           state.incomingFile = {
             name: data.name,
@@ -488,7 +594,6 @@ if (window.__OMNICAST_INITIALIZED__) {
           showToast(`Received ${state.incomingFile.name}!`, 'success');
           sound.success();
 
-          // Auto trigger download
           const a = document.createElement('a');
           a.href = url;
           a.download = state.incomingFile.name;
@@ -498,9 +603,9 @@ if (window.__OMNICAST_INITIALIZED__) {
           state.incomingFile = null;
         }
 
-        // 9. End session
+        // 12. End session
         else if (data.type === 'end-session') {
-          stopAllSessions(data.reason || 'Your friend ended the session.');
+          stopAllSessions(data.reason || 'Your partner ended the session.');
         }
       });
 
@@ -529,7 +634,6 @@ if (window.__OMNICAST_INITIALIZED__) {
 
       state.targetCode = clean;
 
-      // Show loading button
       el.btnConnect.disabled = true;
       el.connectBtnText.textContent = 'Connecting...';
       el.connectSpinner.classList.remove('hidden');
@@ -539,28 +643,26 @@ if (window.__OMNICAST_INITIALIZED__) {
         state.activeConn = conn;
         listenToDataChannel(conn);
 
-        // Timeout fallback
         state.connectTimeoutTimer = setTimeout(() => {
           if (!el.sessionView.classList.contains('hidden') && el.loaderOverlay.classList.contains('hidden') === false) {
-            showToast('Could not connect: Your friend might be offline.', 'error');
+            showToast('Could not connect: Your partner might be offline.', 'error');
             resetConnectButton();
           }
         }, 18000);
 
         conn.on('open', () => {
-          console.log('[Connected to Friend DataChannel] Asking permission...');
+          console.log('[Connected to Partner DataChannel] Asking permission...');
           conn.send({
             type: 'ask-permission',
             fromCode: state.myCode
           });
 
-          // Switch to session view waiting overlay
           el.mainView.classList.add('hidden');
           el.sessionView.classList.remove('hidden');
           el.loaderOverlay.classList.remove('hidden');
-          el.loaderTitle.textContent = `Asking friend (${formatDisplay(clean)})...`;
+          el.loaderTitle.textContent = `Asking partner (${formatDisplay(clean)})...`;
           el.loaderSubtitle.textContent = 'Waiting for them to click "Allow" on their screen';
-          el.sessionPartnerName.textContent = `Watching Screen (${formatDisplay(clean)})`;
+          el.sessionPartnerName.textContent = `Remote Screen (${formatDisplay(clean)})`;
         });
 
       } catch (e) {
@@ -592,7 +694,6 @@ if (window.__OMNICAST_INITIALIZED__) {
         state.localStream = stream;
         state.isHost = true;
 
-        // When host clicks native "Stop sharing" bar
         stream.getVideoTracks()[0].onended = () => {
           stopAllSessions('You stopped sharing your screen.');
         };
@@ -602,21 +703,24 @@ if (window.__OMNICAST_INITIALIZED__) {
           state.activeConn.send({ type: 'accepted' });
         }
 
-        // Floating notice on host machine
         el.hostNotice.classList.remove('hidden');
-        el.hostNoticeSub.textContent = `Friend connected: ${el.incomingFriendCode.textContent}`;
+        el.hostNoticeSub.textContent = `Partner controlling: ${el.incomingFriendCode.textContent}`;
 
         sound.success();
-        showToast('You are now sharing your screen!', 'success');
+        showToast('Screen sharing & remote control is LIVE!', 'success');
         startPingHeartbeat();
         if (state.targetCode) saveRecentConnection(state.targetCode);
 
       } catch (err) {
-        console.warn('[Screen Share Cancelled]', err);
+        console.warn('[Screen Share Cancelled / Not Allowed]', err);
         if (state.activeConn) {
           state.activeConn.send({ type: 'cancelled' });
         }
-        showToast('Screen share cancelled', 'info');
+        if (window.location.protocol === 'file:') {
+          showToast('Browsers block screen sharing on file://. Double-click start.bat!', 'error');
+        } else {
+          showToast('Screen share permission cancelled', 'info');
+        }
       }
     }
 
@@ -630,26 +734,21 @@ if (window.__OMNICAST_INITIALIZED__) {
     }
 
     // =========================================================================
-    // Laser Pointer Transmission from Viewer
+    // Real-Time Mouse & Keyboard Input Transmission (Viewer -> Host)
     // =========================================================================
-    function sendPointerEvent(e, isClick = false) {
-      if (!state.isLaserActive || !state.activeConn || !state.activeConn.open) return;
+    function getNormalizedCoords(e) {
       const rect = el.remoteVideo.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
+      if (!rect.width || !rect.height) return null;
+      const xPercent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const yPercent = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+      return { xPercent, yPercent };
+    }
 
-      const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-
-      // Local visual echo
-      laserPoint = { x: normX, y: normY, time: Date.now() };
-      if (isClick) triggerLaserRipple(normX, normY);
-
-      // Transmit to Host
+    function sendRemoteInput(event) {
+      if (!state.activeConn || !state.activeConn.open) return;
       state.activeConn.send({
-        type: 'laser',
-        x: normX,
-        y: normY,
-        click: isClick
+        type: 'input',
+        event
       });
     }
 
@@ -766,12 +865,15 @@ if (window.__OMNICAST_INITIALIZED__) {
         try { document.exitFullscreen(); } catch (e) {}
       }
 
-      // Reset UI
+      if (el.hostRemoteCursor) el.hostRemoteCursor.classList.add('hidden');
+      if (el.hostKeyHUD) el.hostKeyHUD.classList.add('hidden');
+
       el.sessionView.classList.add('hidden');
       el.hostNotice.classList.add('hidden');
       el.modalIncoming.classList.add('hidden');
       el.chatDrawer.classList.add('hidden');
       el.fileBanner.classList.add('hidden');
+      el.keysDropdown.classList.add('hidden');
       el.mainView.classList.remove('hidden');
       resetConnectButton();
 
@@ -783,15 +885,23 @@ if (window.__OMNICAST_INITIALIZED__) {
     // UI Event Bindings
     // =========================================================================
     function bindUI() {
+      // file:// Scheme Check & Dismissal
+      if (window.location.protocol === 'file:') {
+        if (el.fileSchemeBanner) el.fileSchemeBanner.classList.remove('hidden');
+      }
+      if (el.btnDismissScheme) {
+        el.btnDismissScheme.addEventListener('click', () => el.fileSchemeBanner.classList.add('hidden'));
+      }
+
       // Copy Code Button
       el.btnCopyCode.addEventListener('click', () => {
         navigator.clipboard.writeText(state.myCode).then(() => {
           el.btnCopyCode.classList.add('copied');
           el.copyBtnText.textContent = 'Copied!';
-          showToast('Code copied! Send it to your friend.', 'success');
+          showToast('Code copied! Send it to your partner.', 'success');
           setTimeout(() => {
             el.btnCopyCode.classList.remove('copied');
-            el.copyBtnText.textContent = 'Copy';
+            el.copyBtnText.textContent = 'Copy Code';
           }, 2000);
         });
       });
@@ -821,19 +931,194 @@ if (window.__OMNICAST_INITIALIZED__) {
       el.btnDecline.addEventListener('click', hostDecline);
       el.btnHostStop.addEventListener('click', () => stopAllSessions('You stopped sharing.'));
 
-      // Laser Pointer Viewer Input & Toggle
-      el.btnTogglePointer.addEventListener('click', () => {
-        state.isLaserActive = !state.isLaserActive;
-        el.btnTogglePointer.classList.toggle('active', state.isLaserActive);
-        showToast(state.isLaserActive ? 'Laser Pointer ON' : 'Laser Pointer OFF', 'info');
+      // Mode Switch: Control vs Laser
+      el.btnToggleControl.addEventListener('click', () => {
+        state.mode = 'control';
+        el.btnToggleControl.classList.add('active');
+        el.btnTogglePointer.classList.remove('active');
+        el.remoteVideo.classList.add('control-active');
+        showToast('🎮 Remote Control Mode: Live Mouse & Keyboard ON', 'info');
       });
 
+      el.btnTogglePointer.addEventListener('click', () => {
+        state.mode = 'laser';
+        el.btnTogglePointer.classList.add('active');
+        el.btnToggleControl.classList.remove('active');
+        el.remoteVideo.classList.remove('control-active');
+        showToast('🔴 Laser Highlight Mode: Presentation Pointer ON', 'info');
+      });
+
+      // Special Keys Dropdown Toggle
+      el.btnSpecialKeys.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.isKeysOpen = !state.isKeysOpen;
+        el.keysDropdown.classList.toggle('hidden', !state.isKeysOpen);
+      });
+      document.addEventListener('click', (e) => {
+        if (!el.keysDropdown.contains(e.target) && e.target !== el.btnSpecialKeys) {
+          state.isKeysOpen = false;
+          el.keysDropdown.classList.add('hidden');
+        }
+      });
+
+      // Special Key Action Buttons
+      function sendSpecialAction(action) {
+        if (!state.activeConn || !state.activeConn.open) {
+          showToast('No active session connected!', 'warning');
+          return;
+        }
+        state.activeConn.send({ type: 'special-key', action });
+        showToast(`Sent [${action}] to remote partner!`, 'success');
+        state.isKeysOpen = false;
+        el.keysDropdown.classList.add('hidden');
+      }
+
+      el.btnKeyCAD.addEventListener('click', () => sendSpecialAction('CAD'));
+      el.btnKeyWin.addEventListener('click', () => sendSpecialAction('WIN'));
+      el.btnKeyAltTab.addEventListener('click', () => sendSpecialAction('ALTTAB'));
+
+      // Send Custom Text to Remote
+      function sendCustomText() {
+        const text = el.textSenderInput.value;
+        if (!text) return;
+        if (!state.activeConn || !state.activeConn.open) {
+          showToast('No active session connected!', 'warning');
+          return;
+        }
+        state.activeConn.send({ type: 'type-string', text });
+        showToast(`Typed "${text}" on remote partner's screen!`, 'success');
+        el.textSenderInput.value = '';
+        state.isKeysOpen = false;
+        el.keysDropdown.classList.add('hidden');
+      }
+      el.btnSendTextToRemote.addEventListener('click', sendCustomText);
+      el.textSenderInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendCustomText();
+      });
+
+      // =======================================================================
+      // Remote Video Canvas Event Listeners (Mouse & Keyboard Relay)
+      // =======================================================================
       el.remoteVideo.addEventListener('mousemove', (e) => {
-        sendPointerEvent(e, false);
+        const coords = getNormalizedCoords(e);
+        if (!coords) return;
+
+        if (state.mode === 'laser') {
+          // Send laser highlight
+          if (state.activeConn && state.activeConn.open) {
+            laserPoint = { x: coords.xPercent, y: coords.yPercent, time: Date.now() };
+            state.activeConn.send({
+              type: 'laser',
+              x: coords.xPercent,
+              y: coords.yPercent,
+              click: false
+            });
+          }
+        } else {
+          // Throttle control movement to 60fps (16ms)
+          const now = Date.now();
+          if (now - state.lastMouseMoveTime > 16) {
+            state.lastMouseMoveTime = now;
+            sendRemoteInput({
+              type: 'mousemove',
+              xPercent: coords.xPercent,
+              yPercent: coords.yPercent
+            });
+          }
+        }
       });
 
       el.remoteVideo.addEventListener('mousedown', (e) => {
-        sendPointerEvent(e, true);
+        el.videoContainer.focus();
+        const coords = getNormalizedCoords(e);
+        if (!coords) return;
+
+        if (state.mode === 'laser') {
+          triggerLaserRipple(coords.xPercent, coords.yPercent);
+          if (state.activeConn && state.activeConn.open) {
+            state.activeConn.send({
+              type: 'laser',
+              x: coords.xPercent,
+              y: coords.yPercent,
+              click: true
+            });
+          }
+        } else {
+          sendRemoteInput({
+            type: 'mousedown',
+            button: e.button,
+            xPercent: coords.xPercent,
+            yPercent: coords.yPercent
+          });
+        }
+      });
+
+      el.remoteVideo.addEventListener('mouseup', (e) => {
+        if (state.mode !== 'control') return;
+        const coords = getNormalizedCoords(e);
+        if (!coords) return;
+        sendRemoteInput({
+          type: 'mouseup',
+          button: e.button,
+          xPercent: coords.xPercent,
+          yPercent: coords.yPercent
+        });
+      });
+
+      // Prevent Context Menu on Right Click (Relay real right click instead)
+      el.remoteVideo.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        if (state.mode === 'control') {
+          const coords = getNormalizedCoords(e);
+          if (coords) {
+            sendRemoteInput({ type: 'mousedown', button: 2, xPercent: coords.xPercent, yPercent: coords.yPercent });
+            setTimeout(() => {
+              sendRemoteInput({ type: 'mouseup', button: 2, xPercent: coords.xPercent, yPercent: coords.yPercent });
+            }, 50);
+          }
+        }
+      });
+
+      // Wheel Scroll Relay
+      el.remoteVideo.addEventListener('wheel', (e) => {
+        if (state.mode !== 'control') return;
+        e.preventDefault();
+        sendRemoteInput({
+          type: 'wheel',
+          deltaY: e.deltaY
+        });
+      }, { passive: false });
+
+      // Keyboard Capture on Session View Container
+      window.addEventListener('keydown', (e) => {
+        if (el.sessionView.classList.contains('hidden') || state.mode !== 'control') return;
+        // If user is currently typing in chat input or text sender, don't trap
+        if (document.activeElement === el.chatInput || document.activeElement === el.textSenderInput) return;
+
+        // Prevent common browser navigation keys from leaving session
+        if (['Tab', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+          e.preventDefault();
+        }
+
+        sendRemoteInput({
+          type: 'keydown',
+          key: e.key,
+          keyCode: e.keyCode || e.which,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey
+        });
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (el.sessionView.classList.contains('hidden') || state.mode !== 'control') return;
+        if (document.activeElement === el.chatInput || document.activeElement === el.textSenderInput) return;
+
+        sendRemoteInput({
+          type: 'keyup',
+          key: e.key,
+          keyCode: e.keyCode || e.which
+        });
       });
 
       // Chat Drawer Toggle
@@ -871,7 +1156,7 @@ if (window.__OMNICAST_INITIALIZED__) {
       });
 
       // Stop Watching Button
-      el.btnStopSession.addEventListener('click', () => stopAllSessions('You stopped watching.'));
+      el.btnStopSession.addEventListener('click', () => stopAllSessions('You ended the session.'));
     }
 
     // Start Application
@@ -879,8 +1164,9 @@ if (window.__OMNICAST_INITIALIZED__) {
       bindUI();
       initLaserCanvas();
       renderRecentChips();
+      checkLocalInputServer();
       initPeer();
-      console.log('[OmniCast Simple] Initialized.');
+      console.log('[OmniCast Remote Desktop] Ready.');
     }
 
     if (document.readyState === 'loading') {
