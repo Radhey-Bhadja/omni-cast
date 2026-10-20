@@ -315,7 +315,6 @@
   // Initialize PeerJS
   // =========================================================================
   function initPeer() {
-    // 1. Instantly display code on UI
     const codeDisplay = $('myCodeDisplay');
     if (codeDisplay) {
       codeDisplay.textContent = formatDisplay(state.myCode);
@@ -349,7 +348,6 @@
       state.peer.on('error', (err) => {
         console.warn('[PeerJS]', err.type, err.message);
         if (err.type === 'unavailable-id') {
-          // If collision occurred, pick fresh code immediately
           const fresh = String(Math.floor(100000 + Math.random() * 900000));
           state.myCode = fresh;
           try { localStorage.setItem('omnicast_my_code', fresh); } catch (e) {}
@@ -945,6 +943,7 @@
     const banner = $('fileBanner');
     const dropdown = $('keysDropdown');
     const testPad = $('hostTestPad');
+    const dropZone = $('dropZoneOverlay');
     const mainView = $('mainView');
 
     if (cursor) cursor.classList.add('hidden');
@@ -956,6 +955,7 @@
     if (banner) banner.classList.add('hidden');
     if (dropdown) dropdown.classList.add('hidden');
     if (testPad) testPad.classList.add('hidden');
+    if (dropZone) dropZone.classList.add('hidden');
     if (mainView) mainView.classList.remove('hidden');
 
     resetConnectButton();
@@ -967,6 +967,17 @@
   // UI Event Bindings
   // =========================================================================
   function bindUI() {
+    // Theme Toggle Handler
+    on($('btnThemeToggle'), 'click', () => {
+      const isLight = document.body.classList.toggle('light-theme');
+      const icon = $('themeIcon');
+      if (icon) icon.textContent = isLight ? '🌙' : '☀️';
+      try {
+        localStorage.setItem('omnicast_theme', isLight ? 'light' : 'dark');
+      } catch (e) {}
+      showToast(isLight ? 'Light Theme Enabled' : 'Dark Theme Enabled', 'info');
+    });
+
     // Dismiss file banner if present
     on($('btnDismissScheme'), 'click', () => {
       const banner = $('fileSchemeBanner');
@@ -1001,10 +1012,18 @@
       showToast('Generated a new code!', 'info');
     });
 
-    // Partner Code Input
+    // Partner Code Input & Paste
     on($('targetCodeInput'), 'input', (e) => {
       const clean = cleanDigits(e.target.value);
       e.target.value = formatDisplay(clean);
+    });
+
+    on($('targetCodeInput'), 'paste', (e) => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text');
+      const clean = cleanDigits(text);
+      const input = $('targetCodeInput');
+      if (input) input.value = formatDisplay(clean);
     });
 
     // Connect Form Submit
@@ -1037,6 +1056,30 @@
       if (btnControl) btnControl.classList.remove('active');
       if (video) video.classList.remove('control-active');
       showToast('🔴 Laser Highlight Mode Active', 'info');
+    });
+
+    // Audio Mute / Unmute Toggle
+    on($('btnToggleAudio'), 'click', () => {
+      const video = $('remoteVideo');
+      const label = $('audioLabel');
+      const icon = $('audioIcon');
+      if (!video) return;
+      video.muted = !video.muted;
+      if (label) label.textContent = video.muted ? 'Muted' : 'Sound On';
+      if (icon) {
+        icon.innerHTML = video.muted 
+          ? '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line>'
+          : '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
+      }
+      showToast(video.muted ? 'Remote Audio Muted' : 'Remote Audio Unmuted', 'info');
+    });
+
+    // Fit Screen vs Stretch Toggle
+    on($('btnToggleFit'), 'click', () => {
+      const video = $('remoteVideo');
+      if (!video) return;
+      const isStretch = video.classList.toggle('fit-stretch');
+      showToast(isStretch ? 'Mode: Stretch Full View' : 'Mode: Fit Aspect Ratio', 'info');
     });
 
     // Special Keys Dropdown Toggle
@@ -1091,6 +1134,29 @@
     on($('btnSendTextToRemote'), 'click', sendCustomText);
     on($('textSenderInput'), 'keydown', (e) => {
       if (e.key === 'Enter') sendCustomText();
+    });
+
+    // Drag & Drop File Transfer on Video Container
+    const videoContainer = $('videoContainer');
+    const dropZone = $('dropZoneOverlay');
+
+    on(videoContainer, 'dragover', (e) => {
+      e.preventDefault();
+      if (dropZone) dropZone.classList.remove('hidden');
+    });
+
+    on(videoContainer, 'dragleave', (e) => {
+      if (e.relatedTarget === null || !videoContainer.contains(e.relatedTarget)) {
+        if (dropZone) dropZone.classList.add('hidden');
+      }
+    });
+
+    on(videoContainer, 'drop', (e) => {
+      e.preventDefault();
+      if (dropZone) dropZone.classList.add('hidden');
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        sendFileToFriend(e.dataTransfer.files[0]);
+      }
     });
 
     // Remote Video Mouse Events
