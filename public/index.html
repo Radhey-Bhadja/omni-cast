@@ -3,269 +3,253 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmniCast — Remote Desktop & Screen Sharing</title>
+  <title>OmniCast — Simple & Fast Screen Sharing</title>
   <link rel="icon" type="image/png" href="/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
 
-  <!-- Top Navigation -->
-  <header class="navbar">
-    <div class="nav-container">
+  <!-- Top Simple Header -->
+  <header class="app-header">
+    <div class="header-inner">
       <div class="brand">
-        <img src="/logo.png" alt="OmniCast" class="brand-icon">
-        <div class="brand-info">
-          <span class="brand-title">OmniCast</span>
-          <span class="brand-tag">Peer-to-Peer Remote Desk</span>
+        <img src="/logo.png" alt="OmniCast" class="brand-logo">
+        <div>
+          <span class="brand-name">OmniCast</span>
+          <span class="brand-desc">Simple Screen Sharing</span>
         </div>
       </div>
-      <div class="nav-status">
-        <div id="meshStatus" class="status-indicator status-connecting">
-          <span class="dot"></span>
-          <span id="meshStatusText">Connecting to Network...</span>
-        </div>
+      <div id="connectionStatus" class="status-badge status-online">
+        <span class="status-dot"></span>
+        <span id="statusLabel">Ready</span>
       </div>
     </div>
   </header>
 
-  <!-- Main Dashboard View -->
-  <main id="dashboardView" class="dashboard">
-    <div class="dashboard-container">
+  <!-- Main View: Dead Simple 2-Card Screen -->
+  <main id="mainView" class="main-view">
+    <div class="container">
       
-      <div class="hero-section">
-        <h1>Fast, private remote desktop right from your browser</h1>
-        <p>Direct peer-to-peer screen streaming, live pointer, and file transfers powered by WebRTC. No downloads or installations required.</p>
+      <div class="welcome-text">
+        <h1>Share your screen with anyone in seconds</h1>
+        <p>No downloads. No sign-ups. Just share your 6-digit code or enter a friend's code.</p>
       </div>
 
-      <!-- Split Cards Grid -->
-      <div class="desk-grid">
-
-        <!-- Left Card: Your Desk -->
-        <div class="card desk-card">
-          <div class="card-badge">
-            <span class="badge-dot"></span>
-            <span>This Computer</span>
+      <div class="cards-wrapper">
+        
+        <!-- CARD 1: SHARE YOUR SCREEN -->
+        <div class="action-card card-share">
+          <div class="card-icon-circle icon-orange">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
           </div>
 
-          <h2 class="card-title">Your Desk Code</h2>
-          <p class="card-desc">Share this 6-digit code with the person you want to allow to view your screen.</p>
+          <div class="card-headings">
+            <h2>Share Your Screen</h2>
+            <p>Tell your friend this 6-digit code so they can see your screen.</p>
+          </div>
 
-          <div class="code-display-wrap">
-            <div id="myDeskCode" class="desk-code-value">--- - ---</div>
-            <button id="btnCopyCode" class="btn-copy" title="Copy to clipboard">
-              <svg class="icon-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              <span id="copyText">Copy Code</span>
+          <!-- Big Bold Code Box -->
+          <div class="code-box">
+            <div id="myCodeDisplay" class="code-number">--- ---</div>
+            <button id="btnCopyCode" class="btn-copy" type="button">
+              <svg id="copyIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              <span id="copyBtnText">Copy</span>
             </button>
           </div>
 
-          <div class="card-footer-info">
-            <div class="status-row">
-              <span class="status-circle"></span>
-              <span id="readyLabel">Ready to receive connection</span>
-            </div>
-            <button id="btnRegenCode" class="btn-link" title="Generate a fresh code">Regenerate Code</button>
+          <div class="card-hint">
+            <span>🟢 Your screen is ready to share</span>
+            <button id="btnNewCode" class="link-btn" type="button">Get new number</button>
           </div>
         </div>
 
-        <!-- Right Card: Connect to Partner -->
-        <div class="card connect-card">
-          <div class="card-badge card-badge-blue">
-            <span>Remote Partner</span>
+        <!-- CARD 2: SEE A FRIEND'S SCREEN -->
+        <div class="action-card card-view">
+          <div class="card-icon-circle icon-blue">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
           </div>
 
-          <h2 class="card-title">Connect to a Computer</h2>
-          <p class="card-desc">Enter your partner's 6-digit code to request viewing their screen.</p>
+          <div class="card-headings">
+            <h2>View a Friend's Screen</h2>
+            <p>Type your friend's 6-digit code below to connect to them.</p>
+          </div>
 
+          <!-- Code Input Box -->
           <form id="connectForm" class="connect-form" onsubmit="return false;">
-            <div class="input-wrap">
+            <div class="input-container">
               <input 
                 type="text" 
-                id="partnerCodeInput" 
-                placeholder="482-910" 
+                id="targetCodeInput" 
+                class="code-input" 
+                placeholder="000 000" 
                 maxlength="7" 
                 autocomplete="off" 
                 spellcheck="false"
-                class="code-input"
+                inputmode="numeric"
               >
             </div>
 
-            <button type="submit" id="btnConnect" class="btn-connect">
-              <span class="btn-text">Connect Now</span>
-              <div class="spinner hidden"></div>
+            <button type="submit" id="btnConnect" class="btn-main-connect">
+              <span id="connectBtnText">Connect Now</span>
+              <div id="connectSpinner" class="spinner hidden"></div>
             </button>
           </form>
 
-          <div class="card-footer-info">
-            <span class="secure-label">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-              <span>Direct encrypted P2P connection</span>
-            </span>
+          <div class="card-hint">
+            <span>🔒 Direct private connection</span>
           </div>
         </div>
 
+      </div>
+
+      <!-- Quick 3-step guide for kids / beginners -->
+      <div class="simple-steps">
+        <div class="step-item">
+          <span class="step-num">1</span>
+          <span>Open this page on both computers</span>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step-item">
+          <span class="step-num">2</span>
+          <span>Type your friend's 6-digit code</span>
+        </div>
+        <div class="step-arrow">→</div>
+        <div class="step-item">
+          <span class="step-num">3</span>
+          <span>Click Allow to start watching</span>
+        </div>
       </div>
 
     </div>
   </main>
 
-  <!-- LIVE REMOTE SESSION VIEW (Full Viewport) -->
+  <!-- FULLSCREEN SESSION VIEWER (When Connected) -->
   <div id="sessionView" class="session-view hidden">
     
-    <!-- Video Canvas Stage -->
-    <div id="videoStage" class="video-stage">
+    <!-- Remote Video -->
+    <div id="videoContainer" class="video-container">
       <video id="remoteVideo" autoplay playsinline class="remote-video"></video>
-      <canvas id="laserCanvas" class="laser-canvas"></canvas>
 
       <!-- Connecting Overlay -->
-      <div id="sessionLoader" class="session-loader">
-        <div class="loader-spinner"></div>
-        <p id="sessionLoaderMsg">Waiting for partner to share screen...</p>
+      <div id="loaderOverlay" class="loader-overlay">
+        <div class="loader-circle"></div>
+        <h3 id="loaderTitle">Connecting to your friend...</h3>
+        <p id="loaderSubtitle">Waiting for them to click "Allow" on their screen</p>
+        <button id="btnCancelConnect" class="btn-cancel" type="button">Cancel</button>
       </div>
     </div>
 
-    <!-- Clean Floating Toolbar -->
-    <div id="floatingToolbar" class="floating-toolbar">
-      <div class="toolbar-pill">
+    <!-- Floating Clean Bottom Bar -->
+    <div id="sessionBar" class="session-bar">
+      <div class="bar-pill">
         
-        <!-- Connection Info -->
-        <div class="tool-section info-section">
+        <div class="bar-user-info">
           <span class="live-dot"></span>
-          <span id="remoteSessionId" class="session-code">Desk ---</span>
-          <span id="pingValue" class="ping-pill">-- ms</span>
+          <span id="sessionPartnerName">Watching Friend's Screen</span>
         </div>
 
-        <div class="tool-divider"></div>
-
-        <!-- Controls -->
-        <div class="tool-section actions-section">
-          <!-- Laser Pointer Toggle -->
-          <button id="btnTogglePointer" class="tool-btn active" title="Remote Laser Pointer">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
-            <span>Pointer</span>
-          </button>
-
-          <!-- Chat Drawer Trigger -->
-          <button id="btnToggleChat" class="tool-btn relative" title="Open Live Chat">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        <div class="bar-buttons">
+          <!-- Chat Button -->
+          <button id="btnOpenChat" class="pill-btn" type="button" title="Open Chat">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
             <span>Chat</span>
-            <span id="chatBadge" class="unread-badge hidden">0</span>
+            <span id="chatBadge" class="badge-unread hidden">0</span>
           </button>
 
-          <!-- File Transfer Button -->
-          <button id="btnSendFile" class="tool-btn" title="Send a File">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          <!-- Send File Button -->
+          <button id="btnOpenFile" class="pill-btn" type="button" title="Send File">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
             <span>Send File</span>
           </button>
-          <input type="file" id="hiddenFileInput" class="hidden">
+          <input type="file" id="filePickerInput" class="hidden">
 
-          <!-- Fullscreen Toggle -->
-          <button id="btnFullscreen" class="tool-btn" title="Toggle Fullscreen">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+          <!-- Fullscreen Button -->
+          <button id="btnFullscreen" class="pill-btn" type="button" title="Full Screen">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+          </button>
+
+          <!-- Leave Call / Stop Button -->
+          <button id="btnStopSession" class="btn-leave" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+            <span>Stop Watching</span>
           </button>
         </div>
 
-        <div class="tool-divider"></div>
-
-        <!-- End Session Button -->
-        <button id="btnDisconnect" class="btn-end-session" title="Disconnect Session">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
-          <span>End Session</span>
-        </button>
-
       </div>
     </div>
 
   </div>
 
-  <!-- HOST ACTIVE SCREEN SHARING BAR -->
-  <div id="hostFloatingBar" class="host-bar hidden">
-    <div class="host-bar-content">
-      <span class="live-dot-red"></span>
+  <!-- HOST SHARING FLOATING BAR (Appears on Host's screen while sharing) -->
+  <div id="hostNotice" class="host-notice hidden">
+    <div class="host-notice-box">
+      <span class="red-record-dot"></span>
       <div>
-        <span class="host-bar-title">Sharing your screen</span>
-        <span id="hostPartnerId" class="host-bar-sub">Connected with Remote Desk</span>
+        <div class="host-notice-title">You are sharing your screen!</div>
+        <div id="hostNoticeSub" class="host-notice-sub">Friend connected</div>
       </div>
-      <button id="btnHostStopShare" class="btn-host-stop">Stop Sharing</button>
+      <button id="btnHostStop" class="btn-host-stop" type="button">Stop Sharing</button>
     </div>
   </div>
 
-  <!-- INCOMING CONNECTION MODAL (ON HOST SCREEN) -->
+  <!-- FRIENDLY INCOMING PERMISSION MODAL -->
   <div id="modalIncoming" class="modal-backdrop hidden">
-    <div class="modal-box">
-      <div class="modal-header">
-        <div class="modal-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-        </div>
-        <div>
-          <h3 class="modal-title">Incoming Remote Connection</h3>
-          <p class="modal-sub">A partner is requesting to view your screen.</p>
-        </div>
-      </div>
-
-      <div class="modal-body">
-        <div class="partner-card">
-          <span class="label">Partner ID:</span>
-          <span id="incomingCallerId" class="value">482-910</span>
-        </div>
-        <p class="modal-notice">When you accept, your browser will ask you to choose which screen or window you want to share.</p>
-      </div>
-
-      <div class="modal-footer">
-        <button id="btnDeclineIncoming" class="btn-secondary">Decline</button>
-        <button id="btnAcceptIncoming" class="btn-primary-emerald">Accept & Share Screen</button>
+    <div class="modal-card">
+      <div class="modal-emoji">💻</div>
+      <h3>Your friend wants to see your screen!</h3>
+      <p>Friend's Code: <b id="incomingFriendCode" class="highlight-code">000 000</b></p>
+      <p class="modal-explainer">When you click "Allow", your computer will let you pick which window or screen to show.</p>
+      
+      <div class="modal-buttons">
+        <button id="btnDecline" class="btn-modal-decline" type="button">No, Decline</button>
+        <button id="btnAccept" class="btn-modal-accept" type="button">Yes, Allow Screen Share</button>
       </div>
     </div>
   </div>
 
-  <!-- CHAT DRAWER -->
-  <aside id="chatDrawer" class="chat-drawer hidden">
-    <div class="drawer-header">
-      <div class="flex items-center gap-2">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-        <h3>Live Session Chat</h3>
+  <!-- FRIENDLY CHAT WINDOW -->
+  <div id="chatDrawer" class="chat-drawer hidden">
+    <div class="chat-header">
+      <div class="chat-title">
+        <span class="green-dot"></span>
+        <span>Live Chat with Friend</span>
       </div>
-      <button id="btnCloseChat" class="btn-close">&times;</button>
+      <button id="btnCloseChat" class="btn-close-chat" type="button">✕</button>
     </div>
 
     <div id="chatMessages" class="chat-messages">
-      <div class="chat-intro">Session connected. Send messages or paste text in real time.</div>
+      <div class="chat-welcome">Say hello to your friend! 👋</div>
     </div>
 
-    <form id="chatForm" class="chat-input-bar">
+    <form id="chatForm" class="chat-input-row" onsubmit="return false;">
       <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off">
-      <button type="submit" class="btn-chat-send">Send</button>
+      <button type="submit" id="btnSendChat" class="btn-send-chat">Send</button>
     </form>
-  </aside>
+  </div>
 
-  <!-- FILE TRANSFER PROGRESS TOAST/MODAL -->
-  <div id="fileToast" class="file-toast hidden">
-    <div class="file-toast-header">
-      <span id="fileToastTitle">Sending File...</span>
-      <button id="btnCloseFileToast" class="btn-close">&times;</button>
-    </div>
-    <div id="fileToastName" class="file-toast-name">filename.zip</div>
-    <div class="file-progress-track">
-      <div id="fileProgressBar" class="file-progress-fill" style="width: 0%;"></div>
-    </div>
-    <div class="file-toast-footer">
-      <span id="fileProgressPct">0%</span>
-      <span id="fileStatusText">Transferring P2P</span>
+  <!-- FILE TRANSFER PROGRESS BANNER -->
+  <div id="fileBanner" class="file-banner hidden">
+    <div class="file-banner-content">
+      <span id="fileIcon" class="file-icon">📄</span>
+      <div class="file-info">
+        <div id="fileName" class="file-name">document.pdf</div>
+        <div class="progress-bar">
+          <div id="fileProgressFill" class="progress-fill" style="width: 0%;"></div>
+        </div>
+        <div id="fileStatusText" class="file-status">Sending... 0%</div>
+      </div>
+      <button id="btnCloseFileBanner" class="btn-close-file" type="button">✕</button>
     </div>
   </div>
 
-  <!-- TOAST NOTIFICATIONS CONTAINER -->
+  <!-- SIMPLE TOAST ALERTS -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- Load PeerJS library (Exact v1.5.2 requested) with local fallback -->
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <script>
-    if (typeof Peer === 'undefined') {
-      document.write('<script src="/js/peerjs.min.js"><\/script>');
-    }
-  </script>
+  <!-- PeerJS WebRTC Library (Bundled locally & CDN fallback) -->
+  <script src="/js/peerjs.min.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>
