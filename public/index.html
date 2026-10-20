@@ -613,7 +613,15 @@
     @keyframes toastFade { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
-<body>
+<body class="light-theme">
+  <script>
+    // Default to Light Theme; only use Dark if user explicitly saved 'dark'
+    try {
+      if (localStorage.getItem('omnicast_theme') === 'dark') {
+        document.body.classList.remove('light-theme');
+      }
+    } catch(e) {}
+  </script>
 
   <!-- Notice when running via file:// -->
   <div id="fileSchemeBanner" class="file-scheme-banner hidden">
@@ -633,8 +641,8 @@
       </div>
       <div class="header-actions">
         <!-- Modern Theme Toggle -->
-        <button id="btnThemeToggle" class="theme-toggle-btn" type="button" title="Switch Theme">
-          <span id="themeIcon">☀️</span>
+        <button id="btnThemeToggle" class="theme-toggle-btn" type="button" title="Switch Theme (Light / Dark)">
+          <span id="themeIcon">🌙</span>
         </button>
         <div id="connectionStatus" class="status-badge status-online">
           <span class="status-dot"></span>
@@ -688,11 +696,14 @@
                 var disp = document.getElementById('myCodeDisplay');
                 if (disp) disp.textContent = code.slice(0, 3) + ' ' + code.slice(3);
                 
-                // Initialize theme
+                // Initialize theme - Default to LIGHT
                 var savedTheme = localStorage.getItem('omnicast_theme');
-                if (savedTheme === 'light') {
+                var icon = document.getElementById('themeIcon');
+                if (savedTheme === 'dark') {
+                  document.body.classList.remove('light-theme');
+                  if (icon) icon.textContent = '☀️';
+                } else {
                   document.body.classList.add('light-theme');
-                  var icon = document.getElementById('themeIcon');
                   if (icon) icon.textContent = '🌙';
                 }
               } catch(e) {}

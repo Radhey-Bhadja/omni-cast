@@ -967,7 +967,11 @@
   // UI Event Bindings
   // =========================================================================
   function bindUI() {
-    // Theme Toggle Handler
+    // Theme Toggle Handler (Defaults to Light Theme)
+    const currentIsLight = document.body.classList.contains('light-theme');
+    const themeIconEl = $('themeIcon');
+    if (themeIconEl) themeIconEl.textContent = currentIsLight ? '🌙' : '☀️';
+
     on($('btnThemeToggle'), 'click', () => {
       const isLight = document.body.classList.toggle('light-theme');
       const icon = $('themeIcon');
