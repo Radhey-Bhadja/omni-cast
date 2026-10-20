@@ -9,11 +9,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
   
-  <!-- Fallback external CSS links -->
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="/css/style.css">
 
-  <!-- Guaranteed Embedded Core Styling (Immune to 404 / Missing CSS) -->
   <style>
     :root {
       --bg-dark: #090d16;
@@ -349,6 +347,19 @@
       color: #fff; font-size: 0.75rem; font-weight: 700; padding: 0 0.6rem; cursor: pointer;
     }
     
+    /* Interactive Host Test Notepad */
+    .host-test-pad {
+      position: fixed; bottom: 1.5rem; left: 1.5rem; z-index: 90;
+      background: #1e293b; border: 1px solid var(--border-card); border-radius: 12px;
+      padding: 0.85rem; width: 280px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .test-pad-title { font-size: 0.75rem; font-weight: 700; color: #94a3b8; margin-bottom: 0.4rem; display: flex; justify-content: space-between; }
+    .test-pad-input {
+      width: 100%; height: 50px; background: #090d16; border: 1px solid var(--border-card);
+      border-radius: 6px; padding: 0.4rem; color: #38bdf8; font-family: var(--font-mono);
+      font-size: 0.8rem; resize: none; outline: none;
+    }
+    
     /* Incoming Modal */
     .modal-backdrop {
       position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
@@ -506,6 +517,21 @@
               <span id="copyBtnText">Copy Code</span>
             </button>
           </div>
+
+          <!-- Instant synchronous fallback so the code NEVER displays --- --- -->
+          <script>
+            (function() {
+              try {
+                var code = localStorage.getItem('omnicast_my_code');
+                if (!code || code.length !== 6) {
+                  code = String(Math.floor(100000 + Math.random() * 900000));
+                  localStorage.setItem('omnicast_my_code', code);
+                }
+                var disp = document.getElementById('myCodeDisplay');
+                if (disp) disp.textContent = code.slice(0, 3) + ' ' + code.slice(3);
+              } catch(e) {}
+            })();
+          </script>
 
           <div class="card-hint">
             <span>🟢 Ready for incoming connections</span>
@@ -751,14 +777,23 @@
     <span id="hostKeyHUDText">⌨️ Remote Key: Enter</span>
   </div>
 
+  <!-- INTERACTIVE HOST TEST NOTEPAD (Visible for presentations) -->
+  <div id="hostTestPad" class="host-test-pad hidden">
+    <div class="test-pad-title">
+      <span>Interactive Host Pad</span>
+      <span style="color: #34d399;">● Live</span>
+    </div>
+    <textarea id="hostScratchpadInput" class="test-pad-input" placeholder="Remote partner types here live..."></textarea>
+  </div>
+
   <!-- SIMPLE TOAST ALERTS -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- PeerJS WebRTC Library (Local script with CDN fallback) -->
-  <script src="js/peerjs.min.js"></script>
+  <!-- PeerJS WebRTC Library (Fast Cloudflare Global CDN + Local Fallback) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <script>
     if (typeof Peer === 'undefined') {
-      document.write('<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"><\/script>');
+      document.write('<script src="js/peerjs.min.js"><\/script>');
     }
   </script>
   <script src="js/app.js"></script>

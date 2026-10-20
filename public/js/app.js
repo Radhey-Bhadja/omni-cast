@@ -3,1210 +3,1289 @@
  * Production & Vercel Live Ready — Full Mouse, Keyboard, Wheel, Special Keys & P2P Engine.
  */
 
-if (window.__OMNICAST_INITIALIZED__) {
-  console.warn('[OmniCast] Already initialized.');
-} else {
-  window.__OMNICAST_INITIALIZED__ = true;
+(() => {
+  'use strict';
 
-  (() => {
-    'use strict';
+  // Global Public Google & Twilio STUN servers for cross-network WebRTC traversal
+  const PEER_CONFIG = {
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' }
+      ],
+      iceCandidatePoolSize: 10
+    },
+    debug: 0
+  };
 
-    // Global Public Google & Twilio STUN servers for cross-network WebRTC traversal
-    const PEER_CONFIG = {
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' }
-        ],
-        iceCandidatePoolSize: 10
-      },
-      debug: 0
-    };
+  const CHUNK_SIZE = 64 * 1024; // 64KB per file slice
 
-    const CHUNK_SIZE = 64 * 1024; // 64KB per file slice
+  // Safe DOM Helper
+  const $ = (id) => document.getElementById(id);
+  const on = (el, evt, fn, opts) => {
+    if (el) el.addEventListener(evt, fn, opts);
+  };
 
-    // Application State
-    const state = {
-      peer: null,
-      myCode: null,
-      targetCode: null,
-      isHost: false,
-      activeConn: null, // RTCDataConnection
-      activeCall: null, // MediaConnection
-      localStream: null, // Host Screen MediaStream
-      incomingFile: null,
-      unreadChatCount: 0,
-      isChatOpen: false,
-      isKeysOpen: false,
-      mode: 'control', // 'control' | 'laser'
-      pingInterval: null,
-      connectTimeoutTimer: null,
-      lastMouseMoveTime: 0,
-      hasServerApi: false
-    };
-
-    // Simple Audio Chimes (Zero dependencies)
-    const sound = {
-      ctx: null,
-      play(freq, dur) {
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if (!this.ctx && AudioCtx) this.ctx = new AudioCtx();
-          if (!this.ctx) return;
-          if (this.ctx.state === 'suspended') this.ctx.resume();
-          const osc = this.ctx.createOscillator();
-          const gain = this.ctx.createGain();
-          osc.frequency.value = freq;
-          gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
-          osc.connect(gain);
-          gain.connect(this.ctx.destination);
-          osc.start();
-          osc.stop(this.ctx.currentTime + dur);
-        } catch (e) {}
-      },
-      ring() {
-        this.play(800, 0.15);
-        setTimeout(() => this.play(950, 0.25), 150);
-      },
-      success() {
-        this.play(520, 0.12);
-        setTimeout(() => this.play(680, 0.2), 120);
-      },
-      end() {
-        this.play(440, 0.1);
-        setTimeout(() => this.play(330, 0.18), 100);
-      }
-    };
-
-    // DOM Elements
-    const el = {
-      fileSchemeBanner: document.getElementById('fileSchemeBanner'),
-      btnDismissScheme: document.getElementById('btnDismissScheme'),
-      connectionStatus: document.getElementById('connectionStatus'),
-      statusLabel: document.getElementById('statusLabel'),
-      mainView: document.getElementById('mainView'),
-      myCodeDisplay: document.getElementById('myCodeDisplay'),
-      btnCopyCode: document.getElementById('btnCopyCode'),
-      copyBtnText: document.getElementById('copyBtnText'),
-      btnNewCode: document.getElementById('btnNewCode'),
-      targetCodeInput: document.getElementById('targetCodeInput'),
-      connectForm: document.getElementById('connectForm'),
-      btnConnect: document.getElementById('btnConnect'),
-      connectBtnText: document.getElementById('connectBtnText'),
-      connectSpinner: document.getElementById('connectSpinner'),
-      recentContainer: document.getElementById('recentContainer'),
-      recentChips: document.getElementById('recentChips'),
-      
-      // Active Session
-      sessionView: document.getElementById('sessionView'),
-      videoContainer: document.getElementById('videoContainer'),
-      remoteVideo: document.getElementById('remoteVideo'),
-      laserCanvas: document.getElementById('laserCanvas'),
-      loaderOverlay: document.getElementById('loaderOverlay'),
-      loaderTitle: document.getElementById('loaderTitle'),
-      loaderSubtitle: document.getElementById('loaderSubtitle'),
-      btnCancelConnect: document.getElementById('btnCancelConnect'),
-      sessionPartnerName: document.getElementById('sessionPartnerName'),
-      sessionPing: document.getElementById('sessionPing'),
-      
-      // Control & Laser Modes
-      btnToggleControl: document.getElementById('btnToggleControl'),
-      btnTogglePointer: document.getElementById('btnTogglePointer'),
-
-      // Special Keys
-      btnSpecialKeys: document.getElementById('btnSpecialKeys'),
-      keysDropdown: document.getElementById('keysDropdown'),
-      btnKeyCAD: document.getElementById('btnKeyCAD'),
-      btnKeyWin: document.getElementById('btnKeyWin'),
-      btnKeyAltTab: document.getElementById('btnKeyAltTab'),
-      textSenderInput: document.getElementById('textSenderInput'),
-      btnSendTextToRemote: document.getElementById('btnSendTextToRemote'),
-
-      // Chat & File
-      btnOpenChat: document.getElementById('btnOpenChat'),
-      chatBadge: document.getElementById('chatBadge'),
-      btnOpenFile: document.getElementById('btnOpenFile'),
-      filePickerInput: document.getElementById('filePickerInput'),
-      btnFullscreen: document.getElementById('btnFullscreen'),
-      btnStopSession: document.getElementById('btnStopSession'),
-
-      // Host Screen Overlays
-      hostNotice: document.getElementById('hostNotice'),
-      hostNoticeSub: document.getElementById('hostNoticeSub'),
-      btnHostStop: document.getElementById('btnHostStop'),
-      hostRemoteCursor: document.getElementById('hostRemoteCursor'),
-      remoteCursorTag: document.getElementById('remoteCursorTag'),
-      hostKeyHUD: document.getElementById('hostKeyHUD'),
-      hostKeyHUDText: document.getElementById('hostKeyHUDText'),
-
-      // Incoming Modal
-      modalIncoming: document.getElementById('modalIncoming'),
-      incomingFriendCode: document.getElementById('incomingFriendCode'),
-      btnAccept: document.getElementById('btnAccept'),
-      btnDecline: document.getElementById('btnDecline'),
-
-      // Chat Drawer
-      chatDrawer: document.getElementById('chatDrawer'),
-      btnCloseChat: document.getElementById('btnCloseChat'),
-      chatMessages: document.getElementById('chatMessages'),
-      chatForm: document.getElementById('chatForm'),
-      chatInput: document.getElementById('chatInput'),
-
-      // File Banner
-      fileBanner: document.getElementById('fileBanner'),
-      fileName: document.getElementById('fileName'),
-      fileProgressFill: document.getElementById('fileProgressFill'),
-      fileStatusText: document.getElementById('fileStatusText'),
-      btnCloseFileBanner: document.getElementById('btnCloseFileBanner'),
-
-      toastContainer: document.getElementById('toastContainer')
-    };
-
-    // Laser Canvas Setup
-    let laserCtx = null;
-    let ripples = [];
-    let laserPoint = null;
-    let animFrameId = null;
-
-    function initLaserCanvas() {
-      if (!el.laserCanvas) return;
-      laserCtx = el.laserCanvas.getContext('2d');
-      resizeLaserCanvas();
-      window.addEventListener('resize', resizeLaserCanvas);
-      startLaserLoop();
+  // Immediate Code Generation
+  function getOrGenerateCode() {
+    let saved = '';
+    try {
+      saved = localStorage.getItem('omnicast_my_code');
+    } catch (e) {}
+    if (!saved || saved.length !== 6 || !/^\d{6}$/.test(saved)) {
+      saved = String(Math.floor(100000 + Math.random() * 900000));
+      try {
+        localStorage.setItem('omnicast_my_code', saved);
+      } catch (e) {}
     }
+    return saved;
+  }
 
-    function resizeLaserCanvas() {
-      if (!el.laserCanvas) return;
-      el.laserCanvas.width = window.innerWidth;
-      el.laserCanvas.height = window.innerHeight;
+  function formatDisplay(raw) {
+    if (!raw) return '--- ---';
+    const digits = String(raw).replace(/\D/g, '').slice(0, 6);
+    if (digits.length <= 3) return digits;
+    return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+  }
+
+  function cleanDigits(str) {
+    return String(str || '').replace(/\D/g, '').slice(0, 6);
+  }
+
+  // Application State
+  const state = {
+    peer: null,
+    myCode: getOrGenerateCode(),
+    targetCode: null,
+    isHost: false,
+    activeConn: null, // RTCDataConnection
+    activeCall: null, // MediaConnection
+    localStream: null, // Host Screen MediaStream
+    incomingFile: null,
+    unreadChatCount: 0,
+    isChatOpen: false,
+    isKeysOpen: false,
+    mode: 'control', // 'control' | 'laser'
+    pingInterval: null,
+    connectTimeoutTimer: null,
+    lastMouseMoveTime: 0,
+    hasServerApi: false,
+    reconnectTimer: null
+  };
+
+  // Sound Engine (Web Audio API)
+  const sound = {
+    ctx: null,
+    play(freq, dur) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!this.ctx && AudioCtx) this.ctx = new AudioCtx();
+        if (!this.ctx) return;
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + dur);
+      } catch (e) {}
+    },
+    ring() {
+      this.play(800, 0.15);
+      setTimeout(() => this.play(950, 0.25), 150);
+    },
+    success() {
+      this.play(520, 0.12);
+      setTimeout(() => this.play(680, 0.2), 120);
+    },
+    end() {
+      this.play(440, 0.1);
+      setTimeout(() => this.play(330, 0.18), 100);
     }
+  };
 
-    function startLaserLoop() {
-      if (animFrameId) cancelAnimationFrame(animFrameId);
-      function loop() {
-        renderLaser();
-        animFrameId = requestAnimationFrame(loop);
-      }
+  // Toast Alerts
+  function showToast(message, type = 'info') {
+    const container = $('toastContainer');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(-10px)';
+      setTimeout(() => toast.remove(), 250);
+    }, 3500);
+  }
+
+  // Laser Pointer Engine
+  let laserCtx = null;
+  let ripples = [];
+  let laserPoint = null;
+  let animFrameId = null;
+
+  function initLaserCanvas() {
+    const canvas = $('laserCanvas');
+    if (!canvas) return;
+    laserCtx = canvas.getContext('2d');
+    resizeLaserCanvas();
+    window.addEventListener('resize', resizeLaserCanvas);
+    startLaserLoop();
+  }
+
+  function resizeLaserCanvas() {
+    const canvas = $('laserCanvas');
+    if (!canvas) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+
+  function startLaserLoop() {
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+    function loop() {
+      renderLaser();
       animFrameId = requestAnimationFrame(loop);
     }
+    animFrameId = requestAnimationFrame(loop);
+  }
 
-    function renderLaser() {
-      if (!laserCtx || !el.laserCanvas) return;
-      laserCtx.clearRect(0, 0, el.laserCanvas.width, el.laserCanvas.height);
+  function renderLaser() {
+    const canvas = $('laserCanvas');
+    if (!laserCtx || !canvas) return;
+    laserCtx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (laserPoint && (Date.now() - laserPoint.time < 1200)) {
-        const x = laserPoint.x * el.laserCanvas.width;
-        const y = laserPoint.y * el.laserCanvas.height;
+    if (laserPoint && (Date.now() - laserPoint.time < 1200)) {
+      const x = laserPoint.x * canvas.width;
+      const y = laserPoint.y * canvas.height;
 
-        const radGrad = laserCtx.createRadialGradient(x, y, 0, x, y, 22);
-        radGrad.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
-        radGrad.addColorStop(0.4, 'rgba(239, 68, 68, 0.4)');
-        radGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-        laserCtx.fillStyle = radGrad;
-        laserCtx.beginPath();
-        laserCtx.arc(x, y, 22, 0, Math.PI * 2);
-        laserCtx.fill();
+      const radGrad = laserCtx.createRadialGradient(x, y, 0, x, y, 22);
+      radGrad.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
+      radGrad.addColorStop(0.4, 'rgba(239, 68, 68, 0.4)');
+      radGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+      laserCtx.fillStyle = radGrad;
+      laserCtx.beginPath();
+      laserCtx.arc(x, y, 22, 0, Math.PI * 2);
+      laserCtx.fill();
 
-        laserCtx.fillStyle = '#ffffff';
-        laserCtx.beginPath();
-        laserCtx.arc(x, y, 4, 0, Math.PI * 2);
-        laserCtx.fill();
+      laserCtx.fillStyle = '#ffffff';
+      laserCtx.beginPath();
+      laserCtx.arc(x, y, 4, 0, Math.PI * 2);
+      laserCtx.fill();
+    }
+
+    const now = Date.now();
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const r = ripples[i];
+      const progress = (now - r.start) / 600;
+      if (progress >= 1) {
+        ripples.splice(i, 1);
+        continue;
       }
+      const radius = 6 + progress * 32;
+      const alpha = (1 - progress) * 0.8;
+      const x = r.x * canvas.width;
+      const y = r.y * canvas.height;
 
-      const now = Date.now();
-      for (let i = ripples.length - 1; i >= 0; i--) {
-        const r = ripples[i];
-        const progress = (now - r.start) / 600;
-        if (progress >= 1) {
-          ripples.splice(i, 1);
-          continue;
+      laserCtx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
+      laserCtx.lineWidth = 2.5 * (1 - progress);
+      laserCtx.beginPath();
+      laserCtx.arc(x, y, radius, 0, Math.PI * 2);
+      laserCtx.stroke();
+    }
+  }
+
+  function triggerLaserRipple(normX, normY) {
+    ripples.push({ x: normX, y: normY, start: Date.now() });
+  }
+
+  // Local Host Input Server check (if running via server.js)
+  async function checkLocalInputServer() {
+    try {
+      const res = await fetch('/api/status', { method: 'GET' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.osControlAvailable) {
+          state.hasServerApi = true;
+          console.log('[OmniCast] Native Windows OS Controller is READY!');
         }
-        const radius = 6 + progress * 32;
-        const alpha = (1 - progress) * 0.8;
-        const x = r.x * el.laserCanvas.width;
-        const y = r.y * el.laserCanvas.height;
-
-        laserCtx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
-        laserCtx.lineWidth = 2.5 * (1 - progress);
-        laserCtx.beginPath();
-        laserCtx.arc(x, y, radius, 0, Math.PI * 2);
-        laserCtx.stroke();
       }
+    } catch (e) {
+      state.hasServerApi = false;
     }
+  }
 
-    function triggerLaserRipple(normX, normY) {
-      ripples.push({ x: normX, y: normY, start: Date.now() });
+  function relayToNativeHost(event) {
+    if (!state.isHost || !state.hasServerApi) return;
+    fetch('/api/host-input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event })
+    }).catch(() => {});
+  }
+
+  // Recent Connections
+  function getRecentConnections() {
+    try {
+      const stored = localStorage.getItem('omnicast_recents');
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      return [];
     }
+  }
 
-    // Helpers
-    function getRandom6Digits() {
-      return String(Math.floor(100000 + Math.random() * 900000));
-    }
-
-    function formatDisplay(raw) {
-      if (!raw) return '--- ---';
-      const digits = String(raw).replace(/\D/g, '').slice(0, 6);
-      if (digits.length <= 3) return digits;
-      return `${digits.slice(0, 3)} ${digits.slice(3)}`;
-    }
-
-    function cleanDigits(str) {
-      return String(str || '').replace(/\D/g, '').slice(0, 6);
-    }
-
-    function showToast(message, type = 'info') {
-      const toast = document.createElement('div');
-      toast.className = `toast toast-${type}`;
-      toast.textContent = message;
-      el.toastContainer.appendChild(toast);
-      setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateY(-10px)';
-        setTimeout(() => toast.remove(), 250);
-      }, 3500);
-    }
-
-    // Check Local Node Input Server Availability (silently falls back on Vercel)
-    async function checkLocalInputServer() {
-      try {
-        const res = await fetch('/api/status', { method: 'GET' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.osControlAvailable) {
-            state.hasServerApi = true;
-            console.log('[OmniCast] Native Windows OS Controller is READY!');
-          }
-        }
-      } catch (e) {
-        state.hasServerApi = false;
-      }
-    }
-
-    // Relay to host OS if running locally via server.js
-    function relayToNativeHost(event) {
-      if (!state.isHost || !state.hasServerApi) return;
-      fetch('/api/host-input', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event })
-      }).catch(() => {});
-    }
-
-    // Recent Connections Management
-    function getRecentConnections() {
-      try {
-        const stored = localStorage.getItem('omnicast_recents');
-        return stored ? JSON.parse(stored) : [];
-      } catch (e) {
-        return [];
-      }
-    }
-
-    function saveRecentConnection(code) {
-      if (!code || code.length !== 6) return;
-      let recents = getRecentConnections().filter(c => c !== code);
-      recents.unshift(code);
-      recents = recents.slice(0, 4);
+  function saveRecentConnection(code) {
+    if (!code || code.length !== 6) return;
+    let recents = getRecentConnections().filter(c => c !== code);
+    recents.unshift(code);
+    recents = recents.slice(0, 4);
+    try {
       localStorage.setItem('omnicast_recents', JSON.stringify(recents));
-      renderRecentChips();
-    }
+    } catch (e) {}
+    renderRecentChips();
+  }
 
-    function renderRecentChips() {
-      if (!el.recentChips || !el.recentContainer) return;
-      const recents = getRecentConnections();
-      el.recentChips.innerHTML = '';
-      if (recents.length === 0) {
-        el.recentContainer.classList.add('hidden');
-        return;
-      }
-      el.recentContainer.classList.remove('hidden');
-      recents.forEach(code => {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'recent-chip';
-        chip.textContent = formatDisplay(code);
-        chip.title = `Connect to ${formatDisplay(code)}`;
-        chip.addEventListener('click', () => {
-          el.targetCodeInput.value = formatDisplay(code);
-          startConnect();
-        });
-        el.recentChips.appendChild(chip);
+  function renderRecentChips() {
+    const chipsContainer = $('recentChips');
+    const wrap = $('recentContainer');
+    if (!chipsContainer || !wrap) return;
+    const recents = getRecentConnections();
+    chipsContainer.innerHTML = '';
+    if (recents.length === 0) {
+      wrap.classList.add('hidden');
+      return;
+    }
+    wrap.classList.remove('hidden');
+    recents.forEach(code => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'recent-chip';
+      chip.textContent = formatDisplay(code);
+      chip.title = `Connect to ${formatDisplay(code)}`;
+      chip.addEventListener('click', () => {
+        const input = $('targetCodeInput');
+        if (input) input.value = formatDisplay(code);
+        startConnect();
       });
-    }
+      chipsContainer.appendChild(chip);
+    });
+  }
 
-    // Ping / Latency Monitor
-    function startPingHeartbeat() {
-      stopPingHeartbeat();
-      state.pingInterval = setInterval(() => {
-        if (state.activeConn && state.activeConn.open) {
-          state.activeConn.send({ type: 'ping', t: Date.now() });
-        }
-      }, 2000);
-    }
-
-    function stopPingHeartbeat() {
-      if (state.pingInterval) {
-        clearInterval(state.pingInterval);
-        state.pingInterval = null;
+  // Ping Monitor
+  function startPingHeartbeat() {
+    stopPingHeartbeat();
+    state.pingInterval = setInterval(() => {
+      if (state.activeConn && state.activeConn.open) {
+        state.activeConn.send({ type: 'ping', t: Date.now() });
       }
-      if (el.sessionPing) el.sessionPing.textContent = '-- ms';
+    }, 2000);
+  }
+
+  function stopPingHeartbeat() {
+    if (state.pingInterval) {
+      clearInterval(state.pingInterval);
+      state.pingInterval = null;
+    }
+    const pingEl = $('sessionPing');
+    if (pingEl) pingEl.textContent = '-- ms';
+  }
+
+  // Host Key HUD Notification
+  let hudTimer = null;
+  function showHostKeyHUD(text) {
+    const hud = $('hostKeyHUD');
+    const hudText = $('hostKeyHUDText');
+    if (!hud || !hudText) return;
+    hudText.textContent = text;
+    hud.classList.remove('hidden');
+    if (hudTimer) clearTimeout(hudTimer);
+    hudTimer = setTimeout(() => {
+      hud.classList.add('hidden');
+    }, 1400);
+  }
+
+  // =========================================================================
+  // Initialize PeerJS
+  // =========================================================================
+  function initPeer() {
+    // 1. Instantly display code on UI
+    const codeDisplay = $('myCodeDisplay');
+    if (codeDisplay) {
+      codeDisplay.textContent = formatDisplay(state.myCode);
     }
 
-    // =========================================================================
-    // Initialize PeerJS (Pure Client-Side WebRTC Mesh)
-    // =========================================================================
-    function initPeer() {
-      let saved = localStorage.getItem('omnicast_my_code');
-      if (!saved || saved.length !== 6) {
-        saved = getRandom6Digits();
-        localStorage.setItem('omnicast_my_code', saved);
-      }
-      state.myCode = saved;
-      el.myCodeDisplay.textContent = formatDisplay(saved);
+    const statusLabel = $('statusLabel');
+    const connectionStatus = $('connectionStatus');
+    if (statusLabel) statusLabel.textContent = 'Connecting...';
+    if (connectionStatus) connectionStatus.className = 'status-badge status-connecting';
 
-      el.statusLabel.textContent = 'Connecting...';
-      el.connectionStatus.className = 'status-badge status-connecting';
-
-      if (state.peer) {
-        try { state.peer.destroy(); } catch (e) {}
-      }
-
-      try {
-        state.peer = new Peer('omni-' + state.myCode, PEER_CONFIG);
-
-        // Connected to PeerJS Broker
-        state.peer.on('open', (id) => {
-          console.log('[OmniCast Peer Open]', id);
-          el.statusLabel.textContent = 'Ready (Live)';
-          el.connectionStatus.className = 'status-badge status-online';
-        });
-
-        // Error Handling
-        state.peer.on('error', (err) => {
-          console.warn('[PeerJS]', err.type, err.message);
-          if (err.type === 'unavailable-id') {
-            const fresh = getRandom6Digits();
-            state.myCode = fresh;
-            localStorage.setItem('omnicast_my_code', fresh);
-            el.myCodeDisplay.textContent = formatDisplay(fresh);
-            initPeer();
-          } else if (err.type === 'peer-unavailable') {
-            showToast('Desk Code offline. Check partner device!', 'error');
-            resetConnectButton();
-          }
-        });
-
-        // HOST: Listen for incoming connection from partner
-        state.peer.on('connection', (conn) => {
-          console.log('[Incoming Connection from]', conn.peer);
-          state.activeConn = conn;
-          listenToDataChannel(conn);
-        });
-
-        // VIEWER: Listen for incoming screen call from Host
-        state.peer.on('call', (call) => {
-          console.log('[Incoming Screen Call from]', call.peer);
-          state.activeCall = call;
-          call.answer(); // Viewer answers
-
-          call.on('stream', (stream) => {
-            console.log('[Stream Received on Viewer]', stream.id);
-            el.remoteVideo.srcObject = stream;
-            el.remoteVideo.muted = true;
-            el.remoteVideo.play().then(() => {
-              console.log('[Video stream playing successfully]');
-            }).catch(e => console.log('Autoplay hint:', e));
-
-            el.loaderOverlay.classList.add('hidden');
-            el.videoContainer.focus();
-            sound.success();
-            showToast('Connected! You are viewing & controlling remote screen.', 'success');
-            startPingHeartbeat();
-            if (state.targetCode) saveRecentConnection(state.targetCode);
-          });
-
-          call.on('close', () => {
-            stopAllSessions('Your partner stopped sharing their screen.');
-          });
-        });
-
-      } catch (e) {
-        console.error('[PeerJS Init Error]', e);
-      }
+    if (state.peer) {
+      try { state.peer.destroy(); } catch (e) {}
+      state.peer = null;
     }
 
-    // =========================================================================
-    // Data Channel Messaging (Chat, File, Input Relay, Ping, Laser)
-    // =========================================================================
-    let hudTimer = null;
-    function showHostKeyHUD(text) {
-      if (!el.hostKeyHUD) return;
-      el.hostKeyHUDText.textContent = text;
-      el.hostKeyHUD.classList.remove('hidden');
-      if (hudTimer) clearTimeout(hudTimer);
-      hudTimer = setTimeout(() => {
-        el.hostKeyHUD.classList.add('hidden');
-      }, 1400);
+    if (typeof Peer === 'undefined') {
+      console.warn('[OmniCast] Waiting for PeerJS to load...');
+      setTimeout(initPeer, 500);
+      return;
     }
 
-    function listenToDataChannel(conn) {
-      conn.on('data', (data) => {
-        if (!data) return;
+    try {
+      state.peer = new Peer('omni-' + state.myCode, PEER_CONFIG);
 
-        // 1. Partner asks permission (Host receives this)
-        if (data.type === 'ask-permission') {
-          const callerCode = data.fromCode || conn.peer.replace('omni-', '');
-          state.targetCode = callerCode;
-          sound.ring();
-          el.incomingFriendCode.textContent = formatDisplay(callerCode);
-          el.modalIncoming.classList.remove('hidden');
-        }
+      state.peer.on('open', (id) => {
+        console.log('[OmniCast Peer Open]', id);
+        if (statusLabel) statusLabel.textContent = 'Ready (Online)';
+        if (connectionStatus) connectionStatus.className = 'status-badge status-online';
+      });
 
-        // 2. Partner accepted! (Viewer receives this)
-        else if (data.type === 'accepted') {
-          el.loaderTitle.textContent = 'Starting video stream...';
-          el.loaderSubtitle.textContent = 'Streaming 60 FPS ultra-low latency WebRTC';
-          sound.success();
-        }
-
-        // 3. Partner declined
-        else if (data.type === 'declined') {
-          sound.end();
-          showToast('Your partner declined the screen share request.', 'warning');
+      state.peer.on('error', (err) => {
+        console.warn('[PeerJS]', err.type, err.message);
+        if (err.type === 'unavailable-id') {
+          // If collision occurred, pick fresh code immediately
+          const fresh = String(Math.floor(100000 + Math.random() * 900000));
+          state.myCode = fresh;
+          try { localStorage.setItem('omnicast_my_code', fresh); } catch (e) {}
+          if (codeDisplay) codeDisplay.textContent = formatDisplay(fresh);
+          initPeer();
+        } else if (err.type === 'peer-unavailable') {
+          showToast('That Desk Code is currently offline. Ensure partner has OmniCast open!', 'error');
           resetConnectButton();
-        }
-
-        // 4. Partner cancelled screen selection
-        else if (data.type === 'cancelled') {
-          sound.end();
-          showToast('Your partner cancelled screen selection.', 'warning');
-          resetConnectButton();
-        }
-
-        // 5. Ping & Pong
-        else if (data.type === 'ping') {
-          if (conn.open) conn.send({ type: 'pong', t: data.t });
-        } else if (data.type === 'pong') {
-          const rtt = Math.max(1, Math.round(Date.now() - data.t));
-          if (el.sessionPing) {
-            el.sessionPing.textContent = `${rtt} ms`;
-            el.sessionPing.style.color = rtt < 80 ? '#34d399' : (rtt < 160 ? '#fbbf24' : '#f87171');
+        } else if (err.type === 'network' || err.type === 'server-error') {
+          if (statusLabel) statusLabel.textContent = 'Reconnecting...';
+          if (connectionStatus) connectionStatus.className = 'status-badge status-connecting';
+          if (!state.reconnectTimer) {
+            state.reconnectTimer = setTimeout(() => {
+              state.reconnectTimer = null;
+              initPeer();
+            }, 3000);
           }
-        }
-
-        // 6. Laser Pointer Event (Viewer -> Host)
-        else if (data.type === 'laser') {
-          laserPoint = { x: data.x, y: data.y, time: Date.now() };
-          if (data.click) {
-            triggerLaserRipple(data.x, data.y);
-            sound.play(750, 0.04);
-          }
-        }
-
-        // 7. Remote Input Event (Mouse / Keyboard Relay to Host)
-        else if (data.type === 'input') {
-          const ev = data.event;
-          if (!ev) return;
-
-          relayToNativeHost(ev);
-
-          // Update Visual Cursor Overlay on Host Screen
-          if (ev.type === 'mousemove') {
-            if (el.hostRemoteCursor) {
-              el.hostRemoteCursor.classList.remove('hidden');
-              const screenX = ev.xPercent * window.innerWidth;
-              const screenY = ev.yPercent * window.innerHeight;
-              el.hostRemoteCursor.style.left = `${screenX}px`;
-              el.hostRemoteCursor.style.top = `${screenY}px`;
-            }
-          } else if (ev.type === 'mousedown') {
-            const btnName = ev.button === 2 ? 'Right Click' : (ev.button === 1 ? 'Middle Click' : 'Left Click');
-            showHostKeyHUD(`🖱️ Remote: ${btnName}`);
-            sound.play(600, 0.05);
-          } else if (ev.type === 'keydown') {
-            const keyLabel = ev.key && ev.key.length === 1 ? `"${ev.key}"` : `[${ev.key}]`;
-            showHostKeyHUD(`⌨️ Remote Typed: ${keyLabel}`);
-            sound.play(540, 0.04);
-          }
-        }
-
-        // 8. Special Key Commands (CAD, WIN, ALTTAB)
-        else if (data.type === 'special-key') {
-          relayToNativeHost({ type: 'special', action: data.action });
-          showHostKeyHUD(`⚡ Remote Special: [${data.action}]`);
-          sound.play(700, 0.08);
-        }
-
-        // 9. Custom String Typing (Viewer -> Host)
-        else if (data.type === 'type-string') {
-          showHostKeyHUD(`⌨️ Remote Typed: "${data.text}"`);
-          if (data.text && state.hasServerApi) {
-            for (let i = 0; i < data.text.length; i++) {
-              const char = data.text[i];
-              setTimeout(() => {
-                relayToNativeHost({ type: 'keydown', key: char, keyCode: char.charCodeAt(0) });
-                relayToNativeHost({ type: 'keyup', key: char, keyCode: char.charCodeAt(0) });
-              }, i * 30);
-            }
-          }
-          sound.success();
-        }
-
-        // 10. Live Chat
-        else if (data.type === 'chat') {
-          appendChatMessage(data.text, 'theirs');
-          if (!state.isChatOpen) {
-            state.unreadChatCount++;
-            el.chatBadge.textContent = state.unreadChatCount;
-            el.chatBadge.classList.remove('hidden');
-            sound.play(700, 0.1);
-          }
-        }
-
-        // 11. Chunked File Transfer
-        else if (data.type === 'file-start') {
-          state.incomingFile = {
-            name: data.name,
-            size: data.size,
-            mime: data.mime,
-            chunks: [],
-            receivedBytes: 0
-          };
-          el.fileBanner.classList.remove('hidden');
-          el.fileName.textContent = data.name;
-          el.fileProgressFill.style.width = '0%';
-          el.fileStatusText.textContent = 'Receiving file... 0%';
-          sound.play(600, 0.1);
-        } else if (data.type === 'file-chunk') {
-          if (!state.incomingFile) return;
-          state.incomingFile.chunks.push(data.chunk);
-          state.incomingFile.receivedBytes += data.chunk.byteLength;
-          const pct = Math.min(100, Math.round((state.incomingFile.receivedBytes / state.incomingFile.size) * 100));
-          el.fileProgressFill.style.width = `${pct}%`;
-          el.fileStatusText.textContent = `Receiving... ${pct}%`;
-        } else if (data.type === 'file-end') {
-          if (!state.incomingFile) return;
-          const blob = new Blob(state.incomingFile.chunks, { type: state.incomingFile.mime });
-          const url = URL.createObjectURL(blob);
-          el.fileStatusText.innerHTML = `<a href="${url}" download="${state.incomingFile.name}" style="color: #3b82f6; font-weight: 700; text-decoration: underline;">Download File</a>`;
-          showToast(`Received ${state.incomingFile.name}!`, 'success');
-          sound.success();
-
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = state.incomingFile.name;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          state.incomingFile = null;
-        }
-
-        // 12. End session
-        else if (data.type === 'end-session') {
-          stopAllSessions(data.reason || 'Your partner ended the session.');
         }
       });
 
-      conn.on('close', () => {
-        stopAllSessions('Connection closed.');
-      });
-    }
-
-    // =========================================================================
-    // Viewer Connect Action
-    // =========================================================================
-    function startConnect() {
-      const raw = el.targetCodeInput.value;
-      const clean = cleanDigits(raw);
-
-      if (clean.length !== 6) {
-        showToast('Please enter a 6-digit code (e.g. 482 910)', 'warning');
-        el.targetCodeInput.focus();
-        return;
-      }
-
-      if (clean === state.myCode) {
-        showToast('Cannot connect to your own computer code!', 'warning');
-        return;
-      }
-
-      state.targetCode = clean;
-
-      el.btnConnect.disabled = true;
-      el.connectBtnText.textContent = 'Connecting...';
-      el.connectSpinner.classList.remove('hidden');
-
-      try {
-        const conn = state.peer.connect('omni-' + clean, { reliable: true });
+      // HOST: Listen for incoming connection
+      state.peer.on('connection', (conn) => {
+        console.log('[Incoming Connection from]', conn.peer);
         state.activeConn = conn;
         listenToDataChannel(conn);
+      });
 
-        state.connectTimeoutTimer = setTimeout(() => {
-          if (!el.sessionView.classList.contains('hidden') && el.loaderOverlay.classList.contains('hidden') === false) {
-            showToast('Connection timed out. Partner may be offline.', 'error');
-            resetConnectButton();
+      // VIEWER: Listen for incoming stream call from Host
+      state.peer.on('call', (call) => {
+        console.log('[Incoming Screen Call from]', call.peer);
+        state.activeCall = call;
+        call.answer(); // Viewer answers
+
+        call.on('stream', (stream) => {
+          console.log('[Stream Received on Viewer]', stream.id);
+          const video = $('remoteVideo');
+          if (video) {
+            video.srcObject = stream;
+            video.muted = true;
+            video.play().catch(e => console.log('Autoplay hint:', e));
           }
-        }, 18000);
 
-        conn.on('open', () => {
-          console.log('[Connected to Partner DataChannel] Asking permission...');
-          conn.send({
-            type: 'ask-permission',
-            fromCode: state.myCode
-          });
+          const loader = $('loaderOverlay');
+          if (loader) loader.classList.add('hidden');
+          const videoContainer = $('videoContainer');
+          if (videoContainer) videoContainer.focus();
 
-          el.mainView.classList.add('hidden');
-          el.sessionView.classList.remove('hidden');
-          el.loaderOverlay.classList.remove('hidden');
-          el.loaderTitle.textContent = `Asking partner (${formatDisplay(clean)})...`;
-          el.loaderSubtitle.textContent = 'Waiting for them to click "Allow" on their screen';
-          el.sessionPartnerName.textContent = `Remote Screen (${formatDisplay(clean)})`;
+          sound.success();
+          showToast('Connected! You are viewing & controlling remote screen.', 'success');
+          startPingHeartbeat();
+          if (state.targetCode) saveRecentConnection(state.targetCode);
         });
 
-      } catch (e) {
-        showToast('Failed to connect: ' + e.message, 'error');
+        call.on('close', () => {
+          stopAllSessions('Your partner stopped sharing their screen.');
+        });
+      });
+
+    } catch (e) {
+      console.error('[PeerJS Init Error]', e);
+    }
+  }
+
+  // =========================================================================
+  // Data Channel Messaging
+  // =========================================================================
+  function listenToDataChannel(conn) {
+    conn.on('data', (data) => {
+      if (!data) return;
+
+      // 1. Partner asks permission (Host receives this)
+      if (data.type === 'ask-permission') {
+        const callerCode = data.fromCode || conn.peer.replace('omni-', '');
+        state.targetCode = callerCode;
+        sound.ring();
+        const friendCodeEl = $('incomingFriendCode');
+        if (friendCodeEl) friendCodeEl.textContent = formatDisplay(callerCode);
+        const modal = $('modalIncoming');
+        if (modal) modal.classList.remove('hidden');
+      }
+
+      // 2. Partner accepted (Viewer receives this)
+      else if (data.type === 'accepted') {
+        const title = $('loaderTitle');
+        const sub = $('loaderSubtitle');
+        if (title) title.textContent = 'Starting video stream...';
+        if (sub) sub.textContent = 'Streaming 60 FPS ultra-low latency WebRTC';
+        sound.success();
+      }
+
+      // 3. Partner declined
+      else if (data.type === 'declined') {
+        sound.end();
+        showToast('Your partner declined the screen share request.', 'warning');
         resetConnectButton();
       }
-    }
 
-    function resetConnectButton() {
-      if (state.connectTimeoutTimer) clearTimeout(state.connectTimeoutTimer);
-      el.btnConnect.disabled = false;
-      el.connectBtnText.textContent = 'Connect Now';
-      el.connectSpinner.classList.add('hidden');
-      el.sessionView.classList.add('hidden');
-      el.mainView.classList.remove('hidden');
-    }
+      // 4. Partner cancelled screen selection
+      else if (data.type === 'cancelled') {
+        sound.end();
+        showToast('Your partner cancelled screen selection.', 'warning');
+        resetConnectButton();
+      }
 
-    // =========================================================================
-    // Host Response Actions (Allow / Decline)
-    // =========================================================================
-    async function hostAcceptScreenShare() {
-      el.modalIncoming.classList.add('hidden');
+      // 5. Ping & Pong
+      else if (data.type === 'ping') {
+        if (conn.open) conn.send({ type: 'pong', t: data.t });
+      } else if (data.type === 'pong') {
+        const rtt = Math.max(1, Math.round(Date.now() - data.t));
+        const pingEl = $('sessionPing');
+        if (pingEl) {
+          pingEl.textContent = `${rtt} ms`;
+          pingEl.style.color = rtt < 80 ? '#34d399' : (rtt < 160 ? '#fbbf24' : '#f87171');
+        }
+      }
 
-      try {
-        let stream;
-        try {
-          stream = await navigator.mediaDevices.getDisplayMedia({
-            video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
-            audio: false
-          });
-        } catch (e1) {
-          try {
-            stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-          } catch (e2) {
-            stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      // 6. Laser Pointer
+      else if (data.type === 'laser') {
+        laserPoint = { x: data.x, y: data.y, time: Date.now() };
+        if (data.click) {
+          triggerLaserRipple(data.x, data.y);
+          sound.play(750, 0.04);
+        }
+      }
+
+      // 7. Remote Input Event (Mouse / Keyboard Relay to Host)
+      else if (data.type === 'input') {
+        const ev = data.event;
+        if (!ev) return;
+
+        relayToNativeHost(ev);
+
+        // Update Host Remote Cursor
+        if (ev.type === 'mousemove') {
+          const cursor = $('hostRemoteCursor');
+          if (cursor) {
+            cursor.classList.remove('hidden');
+            const screenX = ev.xPercent * window.innerWidth;
+            const screenY = ev.yPercent * window.innerHeight;
+            cursor.style.left = `${screenX}px`;
+            cursor.style.top = `${screenY}px`;
+          }
+        } else if (ev.type === 'mousedown') {
+          const btnName = ev.button === 2 ? 'Right Click' : (ev.button === 1 ? 'Middle Click' : 'Left Click');
+          showHostKeyHUD(`🖱️ Remote: ${btnName}`);
+          sound.play(600, 0.05);
+        } else if (ev.type === 'keydown') {
+          const keyLabel = ev.key && ev.key.length === 1 ? `"${ev.key}"` : `[${ev.key}]`;
+          showHostKeyHUD(`⌨️ Remote Typed: ${keyLabel}`);
+          sound.play(540, 0.04);
+
+          // Type into host test pad if visible
+          const pad = $('hostScratchpadInput');
+          if (pad) {
+            if (ev.key === 'Backspace') {
+              pad.value = pad.value.slice(0, -1);
+            } else if (ev.key === 'Enter') {
+              pad.value += '\n';
+            } else if (ev.key && ev.key.length === 1) {
+              pad.value += ev.key;
+            }
           }
         }
+      }
 
-        state.localStream = stream;
-        state.isHost = true;
+      // 8. Special Keys
+      else if (data.type === 'special-key') {
+        relayToNativeHost({ type: 'special', action: data.action });
+        showHostKeyHUD(`⚡ Remote Special: [${data.action}]`);
+        sound.play(700, 0.08);
+      }
 
-        if (stream.getVideoTracks() && stream.getVideoTracks()[0]) {
-          stream.getVideoTracks()[0].onended = () => {
-            stopAllSessions('You stopped sharing your screen.');
-          };
+      // 9. Custom String Typing
+      else if (data.type === 'type-string') {
+        showHostKeyHUD(`⌨️ Remote Typed: "${data.text}"`);
+        const pad = $('hostScratchpadInput');
+        if (pad && data.text) pad.value += data.text + ' ';
+        if (data.text && state.hasServerApi) {
+          for (let i = 0; i < data.text.length; i++) {
+            const char = data.text[i];
+            setTimeout(() => {
+              relayToNativeHost({ type: 'keydown', key: char, keyCode: char.charCodeAt(0) });
+              relayToNativeHost({ type: 'keyup', key: char, keyCode: char.charCodeAt(0) });
+            }, i * 30);
+          }
         }
-
-        if (state.activeConn) {
-          state.activeCall = state.peer.call(state.activeConn.peer, stream);
-          state.activeConn.send({ type: 'accepted' });
-        }
-
-        el.hostNotice.classList.remove('hidden');
-        el.hostNoticeSub.textContent = `Partner controlling: ${el.incomingFriendCode.textContent}`;
-
         sound.success();
-        showToast('Screen streaming & remote control is LIVE!', 'success');
-        startPingHeartbeat();
-        if (state.targetCode) saveRecentConnection(state.targetCode);
+      }
 
-      } catch (err) {
-        console.warn('[Screen Share Cancelled / Not Allowed]', err);
-        if (state.activeConn) {
-          state.activeConn.send({ type: 'cancelled' });
+      // 10. Live Chat
+      else if (data.type === 'chat') {
+        appendChatMessage(data.text, 'theirs');
+        if (!state.isChatOpen) {
+          state.unreadChatCount++;
+          const badge = $('chatBadge');
+          if (badge) {
+            badge.textContent = state.unreadChatCount;
+            badge.classList.remove('hidden');
+          }
+          sound.play(700, 0.1);
         }
-        showToast('Screen share permission cancelled or not allowed', 'info');
       }
+
+      // 11. Chunked File Transfer
+      else if (data.type === 'file-start') {
+        state.incomingFile = {
+          name: data.name,
+          size: data.size,
+          mime: data.mime,
+          chunks: [],
+          receivedBytes: 0
+        };
+        const banner = $('fileBanner');
+        if (banner) banner.classList.remove('hidden');
+        const nameEl = $('fileName');
+        if (nameEl) nameEl.textContent = data.name;
+        const fill = $('fileProgressFill');
+        if (fill) fill.style.width = '0%';
+        const status = $('fileStatusText');
+        if (status) status.textContent = 'Receiving file... 0%';
+        sound.play(600, 0.1);
+      } else if (data.type === 'file-chunk') {
+        if (!state.incomingFile) return;
+        state.incomingFile.chunks.push(data.chunk);
+        state.incomingFile.receivedBytes += data.chunk.byteLength;
+        const pct = Math.min(100, Math.round((state.incomingFile.receivedBytes / state.incomingFile.size) * 100));
+        const fill = $('fileProgressFill');
+        if (fill) fill.style.width = `${pct}%`;
+        const status = $('fileStatusText');
+        if (status) status.textContent = `Receiving... ${pct}%`;
+      } else if (data.type === 'file-end') {
+        if (!state.incomingFile) return;
+        const blob = new Blob(state.incomingFile.chunks, { type: state.incomingFile.mime });
+        const url = URL.createObjectURL(blob);
+        const status = $('fileStatusText');
+        if (status) {
+          status.innerHTML = `<a href="${url}" download="${state.incomingFile.name}" style="color: #3b82f6; font-weight: 700; text-decoration: underline;">Download File</a>`;
+        }
+        showToast(`Received ${state.incomingFile.name}!`, 'success');
+        sound.success();
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = state.incomingFile.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        state.incomingFile = null;
+      }
+
+      // 12. End session
+      else if (data.type === 'end-session') {
+        stopAllSessions(data.reason || 'Your partner ended the session.');
+      }
+    });
+
+    conn.on('close', () => {
+      stopAllSessions('Connection closed.');
+    });
+  }
+
+  // =========================================================================
+  // Viewer Connect Action
+  // =========================================================================
+  function startConnect() {
+    const input = $('targetCodeInput');
+    const clean = cleanDigits(input ? input.value : '');
+
+    if (clean.length !== 6) {
+      showToast('Please enter a 6-digit Desk Code (e.g. 482 910)', 'warning');
+      if (input) input.focus();
+      return;
     }
 
-    function hostDecline() {
-      el.modalIncoming.classList.add('hidden');
+    if (clean === state.myCode) {
+      showToast('Cannot connect to your own computer code!', 'warning');
+      return;
+    }
+
+    state.targetCode = clean;
+
+    const btnConnect = $('btnConnect');
+    const btnText = $('connectBtnText');
+    const spinner = $('connectSpinner');
+    if (btnConnect) btnConnect.disabled = true;
+    if (btnText) btnText.textContent = 'Connecting...';
+    if (spinner) spinner.classList.remove('hidden');
+
+    try {
+      const conn = state.peer.connect('omni-' + clean, { reliable: true });
+      state.activeConn = conn;
+      listenToDataChannel(conn);
+
+      state.connectTimeoutTimer = setTimeout(() => {
+        const sessionView = $('sessionView');
+        const loader = $('loaderOverlay');
+        if (sessionView && !sessionView.classList.contains('hidden') && loader && !loader.classList.contains('hidden')) {
+          showToast('Connection timed out. Partner may be offline.', 'error');
+          resetConnectButton();
+        }
+      }, 18000);
+
+      conn.on('open', () => {
+        console.log('[Connected to Partner DataChannel] Asking permission...');
+        conn.send({
+          type: 'ask-permission',
+          fromCode: state.myCode
+        });
+
+        const mainView = $('mainView');
+        const sessionView = $('sessionView');
+        const loader = $('loaderOverlay');
+        const title = $('loaderTitle');
+        const sub = $('loaderSubtitle');
+        const partnerName = $('sessionPartnerName');
+
+        if (mainView) mainView.classList.add('hidden');
+        if (sessionView) sessionView.classList.remove('hidden');
+        if (loader) loader.classList.remove('hidden');
+        if (title) title.textContent = `Asking partner (${formatDisplay(clean)})...`;
+        if (sub) sub.textContent = 'Waiting for them to click "Allow" on their screen';
+        if (partnerName) partnerName.textContent = `Remote Screen (${formatDisplay(clean)})`;
+      });
+
+    } catch (e) {
+      showToast('Failed to connect: ' + e.message, 'error');
+      resetConnectButton();
+    }
+  }
+
+  function resetConnectButton() {
+    if (state.connectTimeoutTimer) clearTimeout(state.connectTimeoutTimer);
+    const btnConnect = $('btnConnect');
+    const btnText = $('connectBtnText');
+    const spinner = $('connectSpinner');
+    const sessionView = $('sessionView');
+    const mainView = $('mainView');
+
+    if (btnConnect) btnConnect.disabled = false;
+    if (btnText) btnText.textContent = 'Connect Now';
+    if (spinner) spinner.classList.add('hidden');
+    if (sessionView) sessionView.classList.add('hidden');
+    if (mainView) mainView.classList.remove('hidden');
+  }
+
+  // =========================================================================
+  // Host Response Actions (Allow / Decline)
+  // =========================================================================
+  async function hostAcceptScreenShare() {
+    const modal = $('modalIncoming');
+    if (modal) modal.classList.add('hidden');
+
+    try {
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
+          audio: false
+        });
+      } catch (e1) {
+        try {
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        } catch (e2) {
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        }
+      }
+
+      state.localStream = stream;
+      state.isHost = true;
+
+      if (stream.getVideoTracks() && stream.getVideoTracks()[0]) {
+        stream.getVideoTracks()[0].onended = () => {
+          stopAllSessions('You stopped sharing your screen.');
+        };
+      }
+
       if (state.activeConn) {
-        state.activeConn.send({ type: 'declined' });
-        try { state.activeConn.close(); } catch (e) {}
+        state.activeCall = state.peer.call(state.activeConn.peer, stream);
+        state.activeConn.send({ type: 'accepted' });
       }
-      showToast('Declined request', 'info');
+
+      const notice = $('hostNotice');
+      const noticeSub = $('hostNoticeSub');
+      const friendCode = $('incomingFriendCode');
+      const testPad = $('hostTestPad');
+
+      if (notice) notice.classList.remove('hidden');
+      if (noticeSub && friendCode) noticeSub.textContent = `Partner controlling: ${friendCode.textContent}`;
+      if (testPad) testPad.classList.remove('hidden');
+
+      sound.success();
+      showToast('Screen streaming & remote control is LIVE!', 'success');
+      startPingHeartbeat();
+      if (state.targetCode) saveRecentConnection(state.targetCode);
+
+    } catch (err) {
+      console.warn('[Screen Share Cancelled / Not Allowed]', err);
+      if (state.activeConn) {
+        state.activeConn.send({ type: 'cancelled' });
+      }
+      showToast('Screen share permission cancelled or not allowed', 'info');
+    }
+  }
+
+  function hostDecline() {
+    const modal = $('modalIncoming');
+    if (modal) modal.classList.add('hidden');
+    if (state.activeConn) {
+      state.activeConn.send({ type: 'declined' });
+      try { state.activeConn.close(); } catch (e) {}
+    }
+    showToast('Declined request', 'info');
+  }
+
+  // =========================================================================
+  // Normalized Coordinates Calculation
+  // =========================================================================
+  function getNormalizedCoords(e) {
+    const video = $('remoteVideo');
+    if (!video) return null;
+    const rect = video.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+
+    const clientX = e.clientX - rect.left;
+    const clientY = e.clientY - rect.top;
+
+    const videoWidth = video.videoWidth || rect.width;
+    const videoHeight = video.videoHeight || rect.height;
+
+    const videoRatio = videoWidth / videoHeight;
+    const elementRatio = rect.width / rect.height;
+
+    let actualWidth = rect.width;
+    let actualHeight = rect.height;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (elementRatio > videoRatio) {
+      actualWidth = rect.height * videoRatio;
+      offsetX = (rect.width - actualWidth) / 2;
+    } else {
+      actualHeight = rect.width / videoRatio;
+      offsetY = (rect.height - actualHeight) / 2;
     }
 
-    // =========================================================================
-    // Real-Time Mouse & Keyboard Input Transmission (Letterbox Corrected)
-    // =========================================================================
-    function getNormalizedCoords(e) {
-      const video = el.remoteVideo;
-      const rect = video.getBoundingClientRect();
-      if (!rect.width || !rect.height) return null;
+    const relativeX = clientX - offsetX;
+    const relativeY = clientY - offsetY;
 
-      const clientX = e.clientX - rect.left;
-      const clientY = e.clientY - rect.top;
+    const xPercent = Math.max(0, Math.min(1, relativeX / actualWidth));
+    const yPercent = Math.max(0, Math.min(1, relativeY / actualHeight));
 
-      const videoWidth = video.videoWidth || rect.width;
-      const videoHeight = video.videoHeight || rect.height;
+    return { xPercent, yPercent };
+  }
 
-      const videoRatio = videoWidth / videoHeight;
-      const elementRatio = rect.width / rect.height;
+  function sendRemoteInput(event) {
+    if (!state.activeConn || !state.activeConn.open) return;
+    state.activeConn.send({
+      type: 'input',
+      event
+    });
+  }
 
-      let actualWidth = rect.width;
-      let actualHeight = rect.height;
-      let offsetX = 0;
-      let offsetY = 0;
+  // =========================================================================
+  // Chat Functions
+  // =========================================================================
+  function appendChatMessage(text, side) {
+    const container = $('chatMessages');
+    if (!container) return;
+    const bubble = document.createElement('div');
+    bubble.className = `msg-bubble ${side}`;
+    bubble.textContent = text;
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+  }
 
-      if (elementRatio > videoRatio) {
-        actualWidth = rect.height * videoRatio;
-        offsetX = (rect.width - actualWidth) / 2;
+  function sendChatMessage(e) {
+    if (e) e.preventDefault();
+    const input = $('chatInput');
+    const text = input ? input.value.trim() : '';
+    if (!text || !state.activeConn) return;
+
+    state.activeConn.send({
+      type: 'chat',
+      text
+    });
+
+    appendChatMessage(text, 'mine');
+    if (input) input.value = '';
+  }
+
+  // =========================================================================
+  // File Transfer Function
+  // =========================================================================
+  function sendFileToFriend(file) {
+    if (!state.activeConn) {
+      showToast('No active connection to send file!', 'error');
+      return;
+    }
+
+    const banner = $('fileBanner');
+    const nameEl = $('fileName');
+    const fill = $('fileProgressFill');
+    const status = $('fileStatusText');
+
+    if (banner) banner.classList.remove('hidden');
+    if (nameEl) nameEl.textContent = file.name;
+    if (fill) fill.style.width = '0%';
+    if (status) status.textContent = 'Sending... 0%';
+
+    state.activeConn.send({
+      type: 'file-start',
+      name: file.name,
+      size: file.size,
+      mime: file.type || 'application/octet-stream'
+    });
+
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    let chunkIndex = 0;
+    const reader = new FileReader();
+
+    function readNext() {
+      const start = chunkIndex * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      reader.readAsArrayBuffer(file.slice(start, end));
+    }
+
+    reader.onload = (e) => {
+      state.activeConn.send({
+        type: 'file-chunk',
+        chunk: e.target.result
+      });
+
+      chunkIndex++;
+      const pct = Math.round((chunkIndex / totalChunks) * 100);
+      if (fill) fill.style.width = `${pct}%`;
+      if (status) status.textContent = `Sending... ${pct}%`;
+
+      if (chunkIndex < totalChunks) {
+        setTimeout(readNext, 10);
       } else {
-        actualHeight = rect.width / videoRatio;
-        offsetY = (rect.height - actualHeight) / 2;
+        state.activeConn.send({ type: 'file-end' });
+        if (status) status.textContent = 'Sent Successfully!';
+        showToast(`Sent ${file.name}!`, 'success');
+        setTimeout(() => {
+          if (banner) banner.classList.add('hidden');
+        }, 2500);
       }
+    };
 
-      const relativeX = clientX - offsetX;
-      const relativeY = clientY - offsetY;
+    readNext();
+  }
 
-      const xPercent = Math.max(0, Math.min(1, relativeX / actualWidth));
-      const yPercent = Math.max(0, Math.min(1, relativeY / actualHeight));
+  // =========================================================================
+  // Stop Session / Disconnect
+  // =========================================================================
+  function stopAllSessions(reason = 'Session ended.') {
+    if (state.connectTimeoutTimer) clearTimeout(state.connectTimeoutTimer);
+    stopPingHeartbeat();
 
-      return { xPercent, yPercent };
+    if (state.localStream) {
+      state.localStream.getTracks().forEach((t) => t.stop());
+      state.localStream = null;
     }
 
-    function sendRemoteInput(event) {
-      if (!state.activeConn || !state.activeConn.open) return;
-      state.activeConn.send({
-        type: 'input',
-        event
+    if (state.activeCall) {
+      try { state.activeCall.close(); } catch (e) {}
+      state.activeCall = null;
+    }
+
+    if (state.activeConn) {
+      try {
+        state.activeConn.send({ type: 'end-session', reason });
+        state.activeConn.close();
+      } catch (e) {}
+      state.activeConn = null;
+    }
+
+    const video = $('remoteVideo');
+    if (video && video.srcObject) {
+      video.srcObject = null;
+    }
+
+    if (document.fullscreenElement) {
+      try { document.exitFullscreen(); } catch (e) {}
+    }
+
+    const cursor = $('hostRemoteCursor');
+    const hud = $('hostKeyHUD');
+    const sessionView = $('sessionView');
+    const hostNotice = $('hostNotice');
+    const modal = $('modalIncoming');
+    const drawer = $('chatDrawer');
+    const banner = $('fileBanner');
+    const dropdown = $('keysDropdown');
+    const testPad = $('hostTestPad');
+    const mainView = $('mainView');
+
+    if (cursor) cursor.classList.add('hidden');
+    if (hud) hud.classList.add('hidden');
+    if (sessionView) sessionView.classList.add('hidden');
+    if (hostNotice) hostNotice.classList.add('hidden');
+    if (modal) modal.classList.add('hidden');
+    if (drawer) drawer.classList.add('hidden');
+    if (banner) banner.classList.add('hidden');
+    if (dropdown) dropdown.classList.add('hidden');
+    if (testPad) testPad.classList.add('hidden');
+    if (mainView) mainView.classList.remove('hidden');
+
+    resetConnectButton();
+    sound.end();
+    showToast(reason, 'info');
+  }
+
+  // =========================================================================
+  // UI Event Bindings
+  // =========================================================================
+  function bindUI() {
+    // Dismiss file banner if present
+    on($('btnDismissScheme'), 'click', () => {
+      const banner = $('fileSchemeBanner');
+      if (banner) banner.classList.add('hidden');
+    });
+
+    // Copy Code Button
+    on($('btnCopyCode'), 'click', () => {
+      navigator.clipboard.writeText(state.myCode).then(() => {
+        const btn = $('btnCopyCode');
+        const text = $('copyBtnText');
+        if (btn) btn.classList.add('copied');
+        if (text) text.textContent = 'Copied!';
+        showToast('Code copied! Send it to your partner.', 'success');
+        setTimeout(() => {
+          if (btn) btn.classList.remove('copied');
+          if (text) text.textContent = 'Copy Code';
+        }, 2000);
       });
-    }
+    });
 
-    // =========================================================================
-    // Chat Functions
-    // =========================================================================
-    function appendChatMessage(text, side) {
-      const bubble = document.createElement('div');
-      bubble.className = `msg-bubble ${side}`;
-      bubble.textContent = text;
-      el.chatMessages.appendChild(bubble);
-      el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
-    }
+    // Get New Code
+    on($('btnNewCode'), 'click', () => {
+      const fresh = String(Math.floor(100000 + Math.random() * 900000));
+      state.myCode = fresh;
+      try {
+        localStorage.setItem('omnicast_my_code', fresh);
+      } catch (e) {}
+      const disp = $('myCodeDisplay');
+      if (disp) disp.textContent = formatDisplay(fresh);
+      initPeer();
+      showToast('Generated a new code!', 'info');
+    });
 
-    function sendChatMessage(e) {
-      if (e) e.preventDefault();
-      const text = el.chatInput.value.trim();
-      if (!text || !state.activeConn) return;
+    // Partner Code Input
+    on($('targetCodeInput'), 'input', (e) => {
+      const clean = cleanDigits(e.target.value);
+      e.target.value = formatDisplay(clean);
+    });
 
-      state.activeConn.send({
-        type: 'chat',
-        text
-      });
+    // Connect Form Submit
+    on($('connectForm'), 'submit', startConnect);
+    on($('btnCancelConnect'), 'click', () => stopAllSessions('Cancelled connection.'));
 
-      appendChatMessage(text, 'mine');
-      el.chatInput.value = '';
-    }
+    // Host Incoming Modal Buttons
+    on($('btnAccept'), 'click', hostAcceptScreenShare);
+    on($('btnDecline'), 'click', hostDecline);
+    on($('btnHostStop'), 'click', () => stopAllSessions('You stopped sharing.'));
 
-    // =========================================================================
-    // File Transfer Function
-    // =========================================================================
-    function sendFileToFriend(file) {
-      if (!state.activeConn) {
-        showToast('No active connection to send file!', 'error');
+    // Mode Switch: Control vs Laser
+    on($('btnToggleControl'), 'click', () => {
+      state.mode = 'control';
+      const btnControl = $('btnToggleControl');
+      const btnPointer = $('btnTogglePointer');
+      const video = $('remoteVideo');
+      if (btnControl) btnControl.classList.add('active');
+      if (btnPointer) btnPointer.classList.remove('active');
+      if (video) video.classList.add('control-active');
+      showToast('🎮 Remote Control: Live Mouse & Keyboard Active', 'info');
+    });
+
+    on($('btnTogglePointer'), 'click', () => {
+      state.mode = 'laser';
+      const btnControl = $('btnToggleControl');
+      const btnPointer = $('btnTogglePointer');
+      const video = $('remoteVideo');
+      if (btnPointer) btnPointer.classList.add('active');
+      if (btnControl) btnControl.classList.remove('active');
+      if (video) video.classList.remove('control-active');
+      showToast('🔴 Laser Highlight Mode Active', 'info');
+    });
+
+    // Special Keys Dropdown Toggle
+    on($('btnSpecialKeys'), 'click', (e) => {
+      e.stopPropagation();
+      state.isKeysOpen = !state.isKeysOpen;
+      const dropdown = $('keysDropdown');
+      if (dropdown) dropdown.classList.toggle('hidden', !state.isKeysOpen);
+    });
+
+    document.addEventListener('click', (e) => {
+      const dropdown = $('keysDropdown');
+      const btn = $('btnSpecialKeys');
+      if (dropdown && !dropdown.contains(e.target) && e.target !== btn) {
+        state.isKeysOpen = false;
+        dropdown.classList.add('hidden');
+      }
+    });
+
+    function sendSpecialAction(action) {
+      if (!state.activeConn || !state.activeConn.open) {
+        showToast('No active session connected!', 'warning');
         return;
       }
-
-      el.fileBanner.classList.remove('hidden');
-      el.fileName.textContent = file.name;
-      el.fileProgressFill.style.width = '0%';
-      el.fileStatusText.textContent = `Sending... 0%`;
-
-      state.activeConn.send({
-        type: 'file-start',
-        name: file.name,
-        size: file.size,
-        mime: file.type || 'application/octet-stream'
-      });
-
-      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-      let chunkIndex = 0;
-      const reader = new FileReader();
-
-      function readNext() {
-        const start = chunkIndex * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        reader.readAsArrayBuffer(file.slice(start, end));
-      }
-
-      reader.onload = (e) => {
-        state.activeConn.send({
-          type: 'file-chunk',
-          chunk: e.target.result
-        });
-
-        chunkIndex++;
-        const pct = Math.round((chunkIndex / totalChunks) * 100);
-        el.fileProgressFill.style.width = `${pct}%`;
-        el.fileStatusText.textContent = `Sending... ${pct}%`;
-
-        if (chunkIndex < totalChunks) {
-          setTimeout(readNext, 10);
-        } else {
-          state.activeConn.send({ type: 'file-end' });
-          el.fileStatusText.textContent = 'Sent Successfully!';
-          showToast(`Sent ${file.name}!`, 'success');
-          setTimeout(() => el.fileBanner.classList.add('hidden'), 2500);
-        }
-      };
-
-      readNext();
+      state.activeConn.send({ type: 'special-key', action });
+      showToast(`Sent [${action}] to remote partner!`, 'success');
+      state.isKeysOpen = false;
+      const dropdown = $('keysDropdown');
+      if (dropdown) dropdown.classList.add('hidden');
     }
 
-    // =========================================================================
-    // Stop Session / Disconnect
-    // =========================================================================
-    function stopAllSessions(reason = 'Session ended.') {
-      if (state.connectTimeoutTimer) clearTimeout(state.connectTimeoutTimer);
-      stopPingHeartbeat();
+    on($('btnKeyCAD'), 'click', () => sendSpecialAction('CAD'));
+    on($('btnKeyWin'), 'click', () => sendSpecialAction('WIN'));
+    on($('btnKeyAltTab'), 'click', () => sendSpecialAction('ALTTAB'));
 
-      if (state.localStream) {
-        state.localStream.getTracks().forEach((t) => t.stop());
-        state.localStream = null;
+    function sendCustomText() {
+      const input = $('textSenderInput');
+      const text = input ? input.value : '';
+      if (!text) return;
+      if (!state.activeConn || !state.activeConn.open) {
+        showToast('No active session connected!', 'warning');
+        return;
       }
-
-      if (state.activeCall) {
-        try { state.activeCall.close(); } catch (e) {}
-        state.activeCall = null;
-      }
-
-      if (state.activeConn) {
-        try {
-          state.activeConn.send({ type: 'end-session', reason });
-          state.activeConn.close();
-        } catch (e) {}
-        state.activeConn = null;
-      }
-
-      if (el.remoteVideo.srcObject) {
-        el.remoteVideo.srcObject = null;
-      }
-
-      if (document.fullscreenElement) {
-        try { document.exitFullscreen(); } catch (e) {}
-      }
-
-      if (el.hostRemoteCursor) el.hostRemoteCursor.classList.add('hidden');
-      if (el.hostKeyHUD) el.hostKeyHUD.classList.add('hidden');
-
-      el.sessionView.classList.add('hidden');
-      el.hostNotice.classList.add('hidden');
-      el.modalIncoming.classList.add('hidden');
-      el.chatDrawer.classList.add('hidden');
-      el.fileBanner.classList.add('hidden');
-      el.keysDropdown.classList.add('hidden');
-      el.mainView.classList.remove('hidden');
-      resetConnectButton();
-
-      sound.end();
-      showToast(reason, 'info');
+      state.activeConn.send({ type: 'type-string', text });
+      showToast(`Typed "${text}" on remote partner's screen!`, 'success');
+      if (input) input.value = '';
+      state.isKeysOpen = false;
+      const dropdown = $('keysDropdown');
+      if (dropdown) dropdown.classList.add('hidden');
     }
 
-    // =========================================================================
-    // UI Event Bindings
-    // =========================================================================
-    function bindUI() {
-      // Dismiss file banner if present
-      if (el.btnDismissScheme && el.fileSchemeBanner) {
-        el.btnDismissScheme.addEventListener('click', () => el.fileSchemeBanner.classList.add('hidden'));
-      }
+    on($('btnSendTextToRemote'), 'click', sendCustomText);
+    on($('textSenderInput'), 'keydown', (e) => {
+      if (e.key === 'Enter') sendCustomText();
+    });
 
-      // Copy Code Button
-      el.btnCopyCode.addEventListener('click', () => {
-        navigator.clipboard.writeText(state.myCode).then(() => {
-          el.btnCopyCode.classList.add('copied');
-          el.copyBtnText.textContent = 'Copied!';
-          showToast('Code copied! Send it to your partner.', 'success');
-          setTimeout(() => {
-            el.btnCopyCode.classList.remove('copied');
-            el.copyBtnText.textContent = 'Copy Code';
-          }, 2000);
-        });
-      });
+    // Remote Video Mouse Events
+    const video = $('remoteVideo');
+    on(video, 'mousemove', (e) => {
+      const coords = getNormalizedCoords(e);
+      if (!coords) return;
 
-      // Get New Code
-      el.btnNewCode.addEventListener('click', () => {
-        const fresh = getRandom6Digits();
-        state.myCode = fresh;
-        localStorage.setItem('omnicast_my_code', fresh);
-        el.myCodeDisplay.textContent = formatDisplay(fresh);
-        initPeer();
-        showToast('Generated a new code!', 'info');
-      });
-
-      // Partner Code Input
-      el.targetCodeInput.addEventListener('input', (e) => {
-        const clean = cleanDigits(e.target.value);
-        e.target.value = formatDisplay(clean);
-      });
-
-      // Connect Form Submit
-      el.connectForm.addEventListener('submit', startConnect);
-      el.btnCancelConnect.addEventListener('click', () => stopAllSessions('Cancelled connection.'));
-
-      // Host Incoming Modal Buttons
-      el.btnAccept.addEventListener('click', hostAcceptScreenShare);
-      el.btnDecline.addEventListener('click', hostDecline);
-      el.btnHostStop.addEventListener('click', () => stopAllSessions('You stopped sharing.'));
-
-      // Mode Switch: Control vs Laser
-      el.btnToggleControl.addEventListener('click', () => {
-        state.mode = 'control';
-        el.btnToggleControl.classList.add('active');
-        el.btnTogglePointer.classList.remove('active');
-        el.remoteVideo.classList.add('control-active');
-        showToast('🎮 Remote Control: Live Mouse & Keyboard Active', 'info');
-      });
-
-      el.btnTogglePointer.addEventListener('click', () => {
-        state.mode = 'laser';
-        el.btnTogglePointer.classList.add('active');
-        el.btnToggleControl.classList.remove('active');
-        el.remoteVideo.classList.remove('control-active');
-        showToast('🔴 Laser Highlight Mode Active', 'info');
-      });
-
-      // Special Keys Dropdown Toggle
-      el.btnSpecialKeys.addEventListener('click', (e) => {
-        e.stopPropagation();
-        state.isKeysOpen = !state.isKeysOpen;
-        el.keysDropdown.classList.toggle('hidden', !state.isKeysOpen);
-      });
-      document.addEventListener('click', (e) => {
-        if (!el.keysDropdown.contains(e.target) && e.target !== el.btnSpecialKeys) {
-          state.isKeysOpen = false;
-          el.keysDropdown.classList.add('hidden');
+      if (state.mode === 'laser') {
+        if (state.activeConn && state.activeConn.open) {
+          laserPoint = { x: coords.xPercent, y: coords.yPercent, time: Date.now() };
+          state.activeConn.send({
+            type: 'laser',
+            x: coords.xPercent,
+            y: coords.yPercent,
+            click: false
+          });
         }
-      });
-
-      // Special Key Action Buttons
-      function sendSpecialAction(action) {
-        if (!state.activeConn || !state.activeConn.open) {
-          showToast('No active session connected!', 'warning');
-          return;
-        }
-        state.activeConn.send({ type: 'special-key', action });
-        showToast(`Sent [${action}] to remote partner!`, 'success');
-        state.isKeysOpen = false;
-        el.keysDropdown.classList.add('hidden');
-      }
-
-      el.btnKeyCAD.addEventListener('click', () => sendSpecialAction('CAD'));
-      el.btnKeyWin.addEventListener('click', () => sendSpecialAction('WIN'));
-      el.btnKeyAltTab.addEventListener('click', () => sendSpecialAction('ALTTAB'));
-
-      // Send Custom Text to Remote
-      function sendCustomText() {
-        const text = el.textSenderInput.value;
-        if (!text) return;
-        if (!state.activeConn || !state.activeConn.open) {
-          showToast('No active session connected!', 'warning');
-          return;
-        }
-        state.activeConn.send({ type: 'type-string', text });
-        showToast(`Typed "${text}" on remote partner's screen!`, 'success');
-        el.textSenderInput.value = '';
-        state.isKeysOpen = false;
-        el.keysDropdown.classList.add('hidden');
-      }
-      el.btnSendTextToRemote.addEventListener('click', sendCustomText);
-      el.textSenderInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sendCustomText();
-      });
-
-      // =======================================================================
-      // Remote Video Canvas Event Listeners (Mouse & Keyboard Relay)
-      // =======================================================================
-      el.remoteVideo.addEventListener('mousemove', (e) => {
-        const coords = getNormalizedCoords(e);
-        if (!coords) return;
-
-        if (state.mode === 'laser') {
-          if (state.activeConn && state.activeConn.open) {
-            laserPoint = { x: coords.xPercent, y: coords.yPercent, time: Date.now() };
-            state.activeConn.send({
-              type: 'laser',
-              x: coords.xPercent,
-              y: coords.yPercent,
-              click: false
-            });
-          }
-        } else {
-          const now = Date.now();
-          if (now - state.lastMouseMoveTime > 16) {
-            state.lastMouseMoveTime = now;
-            sendRemoteInput({
-              type: 'mousemove',
-              xPercent: coords.xPercent,
-              yPercent: coords.yPercent
-            });
-          }
-        }
-      });
-
-      el.remoteVideo.addEventListener('mousedown', (e) => {
-        el.videoContainer.focus();
-        const coords = getNormalizedCoords(e);
-        if (!coords) return;
-
-        if (state.mode === 'laser') {
-          triggerLaserRipple(coords.xPercent, coords.yPercent);
-          if (state.activeConn && state.activeConn.open) {
-            state.activeConn.send({
-              type: 'laser',
-              x: coords.xPercent,
-              y: coords.yPercent,
-              click: true
-            });
-          }
-        } else {
+      } else {
+        const now = Date.now();
+        if (now - state.lastMouseMoveTime > 16) {
+          state.lastMouseMoveTime = now;
           sendRemoteInput({
-            type: 'mousedown',
-            button: e.button,
+            type: 'mousemove',
             xPercent: coords.xPercent,
             yPercent: coords.yPercent
           });
         }
-      });
+      }
+    });
 
-      el.remoteVideo.addEventListener('mouseup', (e) => {
-        if (state.mode !== 'control') return;
-        const coords = getNormalizedCoords(e);
-        if (!coords) return;
+    on(video, 'mousedown', (e) => {
+      const container = $('videoContainer');
+      if (container) container.focus();
+      const coords = getNormalizedCoords(e);
+      if (!coords) return;
+
+      if (state.mode === 'laser') {
+        triggerLaserRipple(coords.xPercent, coords.yPercent);
+        if (state.activeConn && state.activeConn.open) {
+          state.activeConn.send({
+            type: 'laser',
+            x: coords.xPercent,
+            y: coords.yPercent,
+            click: true
+          });
+        }
+      } else {
         sendRemoteInput({
-          type: 'mouseup',
+          type: 'mousedown',
           button: e.button,
           xPercent: coords.xPercent,
           yPercent: coords.yPercent
         });
-      });
+      }
+    });
 
-      // Prevent Context Menu on Right Click (Relay real right click instead)
-      el.remoteVideo.addEventListener('contextmenu', (e) => {
+    on(video, 'mouseup', (e) => {
+      if (state.mode !== 'control') return;
+      const coords = getNormalizedCoords(e);
+      if (!coords) return;
+      sendRemoteInput({
+        type: 'mouseup',
+        button: e.button,
+        xPercent: coords.xPercent,
+        yPercent: coords.yPercent
+      });
+    });
+
+    on(video, 'contextmenu', (e) => {
+      e.preventDefault();
+      if (state.mode === 'control') {
+        const coords = getNormalizedCoords(e);
+        if (coords) {
+          sendRemoteInput({ type: 'mousedown', button: 2, xPercent: coords.xPercent, yPercent: coords.yPercent });
+          setTimeout(() => {
+            sendRemoteInput({ type: 'mouseup', button: 2, xPercent: coords.xPercent, yPercent: coords.yPercent });
+          }, 50);
+        }
+      }
+    });
+
+    on(video, 'wheel', (e) => {
+      if (state.mode !== 'control') return;
+      e.preventDefault();
+      sendRemoteInput({
+        type: 'wheel',
+        deltaY: e.deltaY
+      });
+    }, { passive: false });
+
+    // Keyboard Relay
+    window.addEventListener('keydown', (e) => {
+      const sessionView = $('sessionView');
+      if (!sessionView || sessionView.classList.contains('hidden') || state.mode !== 'control') return;
+
+      const chatInput = $('chatInput');
+      const textInput = $('textSenderInput');
+      if (document.activeElement === chatInput || document.activeElement === textInput) return;
+
+      if (['Tab', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
         e.preventDefault();
-        if (state.mode === 'control') {
-          const coords = getNormalizedCoords(e);
-          if (coords) {
-            sendRemoteInput({ type: 'mousedown', button: 2, xPercent: coords.xPercent, yPercent: coords.yPercent });
-            setTimeout(() => {
-              sendRemoteInput({ type: 'mouseup', button: 2, xPercent: coords.xPercent, yPercent: coords.yPercent });
-            }, 50);
-          }
-        }
+      }
+
+      sendRemoteInput({
+        type: 'keydown',
+        key: e.key,
+        keyCode: e.keyCode || e.which,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey
       });
+    });
 
-      // Wheel Scroll Relay
-      el.remoteVideo.addEventListener('wheel', (e) => {
-        if (state.mode !== 'control') return;
-        e.preventDefault();
-        sendRemoteInput({
-          type: 'wheel',
-          deltaY: e.deltaY
-        });
-      }, { passive: false });
+    window.addEventListener('keyup', (e) => {
+      const sessionView = $('sessionView');
+      if (!sessionView || sessionView.classList.contains('hidden') || state.mode !== 'control') return;
 
-      // Keyboard Capture
-      window.addEventListener('keydown', (e) => {
-        if (el.sessionView.classList.contains('hidden') || state.mode !== 'control') return;
-        if (document.activeElement === el.chatInput || document.activeElement === el.textSenderInput) return;
+      const chatInput = $('chatInput');
+      const textInput = $('textSenderInput');
+      if (document.activeElement === chatInput || document.activeElement === textInput) return;
 
-        if (['Tab', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
-          e.preventDefault();
-        }
-
-        sendRemoteInput({
-          type: 'keydown',
-          key: e.key,
-          keyCode: e.keyCode || e.which,
-          ctrlKey: e.ctrlKey,
-          shiftKey: e.shiftKey,
-          altKey: e.altKey
-        });
+      sendRemoteInput({
+        type: 'keyup',
+        key: e.key,
+        keyCode: e.keyCode || e.which
       });
+    });
 
-      window.addEventListener('keyup', (e) => {
-        if (el.sessionView.classList.contains('hidden') || state.mode !== 'control') return;
-        if (document.activeElement === el.chatInput || document.activeElement === el.textSenderInput) return;
+    // Chat
+    on($('btnOpenChat'), 'click', () => {
+      state.isChatOpen = !state.isChatOpen;
+      const drawer = $('chatDrawer');
+      if (drawer) drawer.classList.toggle('hidden', !state.isChatOpen);
+      if (state.isChatOpen) {
+        state.unreadChatCount = 0;
+        const badge = $('chatBadge');
+        if (badge) badge.classList.add('hidden');
+        const input = $('chatInput');
+        if (input) input.focus();
+      }
+    });
 
-        sendRemoteInput({
-          type: 'keyup',
-          key: e.key,
-          keyCode: e.keyCode || e.which
-        });
-      });
+    on($('btnCloseChat'), 'click', () => {
+      state.isChatOpen = false;
+      const drawer = $('chatDrawer');
+      if (drawer) drawer.classList.add('hidden');
+    });
 
-      // Chat Drawer Toggle
-      el.btnOpenChat.addEventListener('click', () => {
-        state.isChatOpen = !state.isChatOpen;
-        el.chatDrawer.classList.toggle('hidden', !state.isChatOpen);
-        if (state.isChatOpen) {
-          state.unreadChatCount = 0;
-          el.chatBadge.classList.add('hidden');
-          el.chatInput.focus();
-        }
-      });
-      el.btnCloseChat.addEventListener('click', () => {
-        state.isChatOpen = false;
-        el.chatDrawer.classList.add('hidden');
-      });
-      el.chatForm.addEventListener('submit', sendChatMessage);
+    on($('chatForm'), 'submit', sendChatMessage);
 
-      // Send File Button
-      el.btnOpenFile.addEventListener('click', () => el.filePickerInput.click());
-      el.filePickerInput.addEventListener('change', (e) => {
-        if (e.target.files && e.target.files[0]) {
-          sendFileToFriend(e.target.files[0]);
-        }
-      });
-      el.btnCloseFileBanner.addEventListener('click', () => el.fileBanner.classList.add('hidden'));
+    // File Picker
+    const picker = $('filePickerInput');
+    on($('btnOpenFile'), 'click', () => {
+      if (picker) picker.click();
+    });
 
-      // Fullscreen Toggle
-      el.btnFullscreen.addEventListener('click', () => {
-        if (!document.fullscreenElement) {
-          document.documentElement.requestFullscreen().catch(() => {});
-        } else {
-          document.exitFullscreen().catch(() => {});
-        }
-      });
+    on(picker, 'change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        sendFileToFriend(e.target.files[0]);
+      }
+    });
 
-      // Stop Watching Button
-      el.btnStopSession.addEventListener('click', () => stopAllSessions('You ended the session.'));
-    }
+    on($('btnCloseFileBanner'), 'click', () => {
+      const banner = $('fileBanner');
+      if (banner) banner.classList.add('hidden');
+    });
 
-    // Start Application
-    function init() {
-      bindUI();
-      initLaserCanvas();
-      renderRecentChips();
-      checkLocalInputServer();
-      initPeer();
-      console.log('[OmniCast Remote Desktop] Live & Ready.');
-    }
+    // Fullscreen
+    on($('btnFullscreen'), 'click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
 
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', init);
-    } else {
-      init();
-    }
+    // Disconnect
+    on($('btnStopSession'), 'click', () => stopAllSessions('You ended the session.'));
+  }
 
-  })();
-}
+  // Start Application
+  function init() {
+    bindUI();
+    initLaserCanvas();
+    renderRecentChips();
+    checkLocalInputServer();
+    initPeer();
+    console.log('[OmniCast Remote Desktop] Ready & Live.');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+})();
