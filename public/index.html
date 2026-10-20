@@ -1,645 +1,271 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmniCast - Ultra-Low Latency WebRTC Remote Desktop</title>
+  <title>OmniCast — Remote Desktop & Screen Sharing</title>
   <link rel="icon" type="image/png" href="/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
 </head>
-<body class="bg-dark-950 text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+<body>
 
-  <!-- Ambient Glowing Background Mesh -->
-  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
-    <div class="glow-orb orb-1"></div>
-    <div class="glow-orb orb-2"></div>
-    <div class="glow-orb orb-3"></div>
-    <div class="mesh-grid"></div>
-  </div>
-
-  <!-- Main Container -->
-  <div id="app" class="relative z-10 min-h-screen flex flex-col">
-
-    <!-- Top Navigation Bar -->
-    <header class="app-header">
-      <div class="header-container">
-        <div class="brand-group">
-          <div class="logo-wrapper">
-            <img src="/logo.png" alt="OmniCast Logo" class="brand-logo">
-            <div class="logo-glow"></div>
-          </div>
-          <div class="brand-text">
-            <div class="flex items-center gap-2">
-              <span class="brand-name">Omni<span class="text-gradient-cyan">Cast</span></span>
-              <span class="badge-version">v1.0</span>
-            </div>
-            <span class="brand-tagline">WebRTC Remote Desktop Engine</span>
-          </div>
-        </div>
-
-        <div class="header-actions">
-          <div id="signalingStatus" class="status-pill status-connecting">
-            <span class="status-dot"></span>
-            <span class="status-text">Connecting to Server...</span>
-          </div>
-          <button id="btnOpenHelp" class="icon-btn" title="Shortcuts & System Info">
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-          </button>
+  <!-- Top Navigation -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <img src="/logo.png" alt="OmniCast" class="brand-icon">
+        <div class="brand-info">
+          <span class="brand-title">OmniCast</span>
+          <span class="brand-tag">Peer-to-Peer Remote Desk</span>
         </div>
       </div>
-    </header>
-
-    <!-- MAIN DASHBOARD VIEW -->
-    <main id="dashboardView" class="main-content">
-      <div class="dashboard-hero">
-        <h1 class="hero-title">Ultra-Low Latency <span class="text-gradient">Remote Screen Control</span></h1>
-        <p class="hero-sub">Direct peer-to-peer screen capture, 60 FPS streaming, and instant keyboard & mouse relay powered by WebRTC.</p>
-        
-        <!-- Feature Highlights Bar -->
-        <div class="feature-pills">
-          <div class="feature-item">
-            <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-            <span>End-to-End P2P Encrypted</span>
-          </div>
-          <div class="feature-item">
-            <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-            <span>Sub-30ms Latency</span>
-          </div>
-          <div class="feature-item">
-            <svg class="w-4 h-4 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-            <span>60 FPS Fluid Display</span>
-          </div>
+      <div class="nav-status">
+        <div id="meshStatus" class="status-indicator status-connecting">
+          <span class="dot"></span>
+          <span id="meshStatusText">Connecting to Network...</span>
         </div>
       </div>
+    </div>
+  </header>
 
-      <!-- Split Desktop Cards Layout -->
-      <div class="cards-grid">
-        
-        <!-- CARD 1: This Desk (Share Screen) -->
-        <div class="glass-card desk-card host-card">
-          <div class="card-header">
-            <div class="card-title-group">
-              <div class="card-icon host-icon">
-                <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-              </div>
-              <div>
-                <h2 class="card-title">This Desk</h2>
-                <p class="card-subtitle">Allow others to view and control this computer</p>
-              </div>
-            </div>
-            <div id="hostStateBadge" class="state-badge badge-ready">Ready</div>
+  <!-- Main Dashboard View -->
+  <main id="dashboardView" class="dashboard">
+    <div class="dashboard-container">
+      
+      <div class="hero-section">
+        <h1>Fast, private remote desktop right from your browser</h1>
+        <p>Direct peer-to-peer screen streaming, live pointer, and file transfers powered by WebRTC. No downloads or installations required.</p>
+      </div>
+
+      <!-- Split Cards Grid -->
+      <div class="desk-grid">
+
+        <!-- Left Card: Your Desk -->
+        <div class="card desk-card">
+          <div class="card-badge">
+            <span class="badge-dot"></span>
+            <span>This Computer</span>
           </div>
 
-          <div class="card-body">
-            <!-- Access Code Display -->
-            <div class="code-container">
-              <label class="input-label flex items-center justify-between">
-                <span>Your 9-Digit Access Code</span>
-                <span class="label-helper">Share with your partner</span>
-              </label>
-              <div class="code-box">
-                <div id="myAccessCode" class="access-code">--- --- ---</div>
-                <div class="code-actions">
-                  <button id="btnCopyCode" class="btn-action" title="Copy Access Code">
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                    <span>Copy</span>
-                  </button>
-                  <button id="btnRefreshCode" class="btn-action btn-icon-only" title="Generate New Code">
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                  </button>
-                  <button id="btnShareLink" class="btn-action btn-icon-only" title="Copy One-Click Connect Link">
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                  </button>
-                </div>
-              </div>
-            </div>
+          <h2 class="card-title">Your Desk Code</h2>
+          <p class="card-desc">Share this 6-digit code with the person you want to allow to view your screen.</p>
 
-            <!-- Security PIN Configuration -->
-            <div class="security-section">
-              <div class="flex items-center justify-between mb-2">
-                <label class="toggle-control flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" id="toggleRequirePin" class="sr-only switch-input">
-                  <span class="switch-slider"></span>
-                  <span class="text-sm font-medium text-slate-300">Require Security PIN</span>
-                </label>
-                <span class="text-xs text-slate-400">Extra layer of protection</span>
-              </div>
-              <div id="pinInputWrapper" class="pin-input-wrapper hidden">
-                <div class="pin-box">
-                  <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                  <input type="password" id="hostPinInput" maxlength="6" placeholder="Set 4-6 digit PIN" class="pin-field">
-                  <button type="button" id="togglePinVisibility" class="text-slate-400 hover:text-slate-200">
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                  </button>
-                </div>
-              </div>
-            </div>
+          <div class="code-display-wrap">
+            <div id="myDeskCode" class="desk-code-value">--- - ---</div>
+            <button id="btnCopyCode" class="btn-copy" title="Copy to clipboard">
+              <svg class="icon-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              <span id="copyText">Copy Code</span>
+            </button>
+          </div>
 
-            <!-- Permission Toggles Accordion -->
-            <div class="permissions-section">
-              <span class="section-heading">Session Access Permissions</span>
-              <div class="permissions-grid">
-                <label class="permission-item">
-                  <input type="checkbox" id="permControl" checked class="perm-checkbox">
-                  <span class="perm-label">
-                    <span class="perm-title">Keyboard & Mouse Control</span>
-                    <span class="perm-desc">Allows partner to click and type</span>
-                  </span>
-                </label>
-                <label class="permission-item">
-                  <input type="checkbox" id="permAudio" checked class="perm-checkbox">
-                  <span class="perm-label">
-                    <span class="perm-title">System Audio Streaming</span>
-                    <span class="perm-desc">Transmits computer sound</span>
-                  </span>
-                </label>
-                <label class="permission-item">
-                  <input type="checkbox" id="permFileTransfer" checked class="perm-checkbox">
-                  <span class="perm-label">
-                    <span class="perm-title">P2P File Transfer</span>
-                    <span class="perm-desc">Send/receive files directly</span>
-                  </span>
-                </label>
-                <label class="permission-item">
-                  <input type="checkbox" id="permClipboard" checked class="perm-checkbox">
-                  <span class="perm-label">
-                    <span class="perm-title">Clipboard Synchronization</span>
-                    <span class="perm-desc">Sync copied text across sessions</span>
-                  </span>
-                </label>
-                <label class="permission-item perm-native-os">
-                  <input type="checkbox" id="permNativeOs" checked class="perm-checkbox">
-                  <span class="perm-label">
-                    <span class="perm-title flex items-center gap-1.5">
-                      <span>Host OS Native Desktop Control</span>
-                      <span class="tag-pro">Win32</span>
-                    </span>
-                    <span class="perm-desc">Translates inputs directly to Windows desktop</span>
-                  </span>
-                </label>
-              </div>
+          <div class="card-footer-info">
+            <div class="status-row">
+              <span class="status-circle"></span>
+              <span id="readyLabel">Ready to receive connection</span>
             </div>
-
-            <!-- Host Status & Screen Sharing Trigger -->
-            <div class="host-cta-box">
-              <div class="flex items-center justify-between">
-                <div>
-                  <div class="font-medium text-slate-200">Screen Broadcast</div>
-                  <div id="hostScreenStatus" class="text-xs text-slate-400">Stream will start when approved partner connects</div>
-                </div>
-                <button id="btnPreselectScreen" class="btn-secondary text-xs">
-                  <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-                  <span>Test Display Capture</span>
-                </button>
-              </div>
-            </div>
+            <button id="btnRegenCode" class="btn-link" title="Generate a fresh code">Regenerate Code</button>
           </div>
         </div>
 
-        <!-- CARD 2: Remote Desk (Control Partner) -->
-        <div class="glass-card desk-card client-card">
-          <div class="card-header">
-            <div class="card-title-group">
-              <div class="card-icon client-icon">
-                <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
-              </div>
-              <div>
-                <h2 class="card-title">Remote Desk</h2>
-                <p class="card-subtitle">Connect and control a partner's remote computer</p>
-              </div>
-            </div>
-            <div class="state-badge badge-client">Viewer Mode</div>
+        <!-- Right Card: Connect to Partner -->
+        <div class="card connect-card">
+          <div class="card-badge card-badge-blue">
+            <span>Remote Partner</span>
           </div>
 
-          <div class="card-body">
-            <!-- Target Access Code Input -->
-            <div class="code-container">
-              <label for="remoteCodeInput" class="input-label flex items-center justify-between">
-                <span>Partner's 9-Digit Access Code</span>
-                <span class="label-helper">e.g. 482 910 384</span>
-              </label>
-              <div class="remote-input-wrapper">
-                <div class="input-icon-slot">
-                  <svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-                </div>
-                <input 
-                  type="text" 
-                  id="remoteCodeInput" 
-                  maxlength="11" 
-                  placeholder="000 000 000" 
-                  autocomplete="off" 
-                  spellcheck="false"
-                  class="remote-code-field font-mono"
-                >
-                <button id="btnClearRemoteCode" class="btn-clear hidden" title="Clear">
-                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-              </div>
+          <h2 class="card-title">Connect to a Computer</h2>
+          <p class="card-desc">Enter your partner's 6-digit code to request viewing their screen.</p>
+
+          <form id="connectForm" class="connect-form" onsubmit="return false;">
+            <div class="input-wrap">
+              <input 
+                type="text" 
+                id="partnerCodeInput" 
+                placeholder="482-910" 
+                maxlength="7" 
+                autocomplete="off" 
+                spellcheck="false"
+                class="code-input"
+              >
             </div>
 
-            <!-- Optional PIN input for remote -->
-            <div class="pin-input-group">
-              <label for="partnerPinInput" class="input-label flex items-center justify-between">
-                <span>Partner Security PIN (If required)</span>
-                <span class="label-helper">Optional</span>
-              </label>
-              <div class="relative">
-                <input type="password" id="partnerPinInput" maxlength="6" placeholder="Enter PIN if required" class="styled-input">
-                <div class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
-                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                </div>
-              </div>
-            </div>
-
-            <!-- Connection Mode Selection -->
-            <div class="mode-selection">
-              <span class="section-heading">Session Mode</span>
-              <div class="mode-radios">
-                <label class="mode-radio active" data-mode="full">
-                  <input type="radio" name="connectMode" value="full" checked class="sr-only">
-                  <div class="mode-radio-content">
-                    <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
-                    <div>
-                      <div class="mode-radio-title">Full Remote Control</div>
-                      <div class="mode-radio-sub">View screen, move mouse & send keystrokes</div>
-                    </div>
-                  </div>
-                </label>
-                <label class="mode-radio" data-mode="view">
-                  <input type="radio" name="connectMode" value="view" class="sr-only">
-                  <div class="mode-radio-content">
-                    <svg class="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                    <div>
-                      <div class="mode-radio-title">View Only</div>
-                      <div class="mode-radio-sub">Watch remote display without sending input</div>
-                    </div>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            <!-- Connect Button -->
-            <button id="btnConnect" class="btn-connect">
-              <span class="btn-connect-content">
-                <svg class="w-5 h-5 connect-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                <span class="btn-connect-text">Connect to Remote Desk</span>
-              </span>
+            <button type="submit" id="btnConnect" class="btn-connect">
+              <span class="btn-text">Connect Now</span>
               <div class="spinner hidden"></div>
             </button>
+          </form>
 
-            <!-- Recent Sessions History -->
-            <div id="recentSessionsWrapper" class="recent-sessions-box">
-              <div class="flex items-center justify-between mb-2">
-                <span class="section-heading">Recent Sessions</span>
-                <button id="btnClearHistory" class="text-xs text-slate-400 hover:text-slate-200">Clear</button>
-              </div>
-              <div id="recentList" class="recent-list">
-                <!-- Dynamically populated from localStorage -->
-                <div class="recent-empty">No recent connections</div>
-              </div>
-            </div>
+          <div class="card-footer-info">
+            <span class="secure-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+              <span>Direct encrypted P2P connection</span>
+            </span>
           </div>
         </div>
 
       </div>
-    </main>
 
-    <!-- ACTIVE REMOTE SESSION VIEW (Full Viewport) -->
-    <div id="remoteSessionView" class="remote-session-view hidden">
-      
-      <!-- Remote Video Display Container -->
-      <div id="videoContainer" class="video-container">
-        <video id="remoteVideo" autoplay playsinline class="remote-video"></video>
+    </div>
+  </main>
+
+  <!-- LIVE REMOTE SESSION VIEW (Full Viewport) -->
+  <div id="sessionView" class="session-view hidden">
+    
+    <!-- Video Canvas Stage -->
+    <div id="videoStage" class="video-stage">
+      <video id="remoteVideo" autoplay playsinline class="remote-video"></video>
+      <canvas id="laserCanvas" class="laser-canvas"></canvas>
+
+      <!-- Connecting Overlay -->
+      <div id="sessionLoader" class="session-loader">
+        <div class="loader-spinner"></div>
+        <p id="sessionLoaderMsg">Waiting for partner to share screen...</p>
+      </div>
+    </div>
+
+    <!-- Clean Floating Toolbar -->
+    <div id="floatingToolbar" class="floating-toolbar">
+      <div class="toolbar-pill">
         
-        <!-- Virtual Laser Pointer / Click Feedback Canvas -->
-        <canvas id="pointerOverlay" class="pointer-overlay"></canvas>
-        
-        <!-- Loading / Reconnecting Overlay -->
-        <div id="sessionLoadingOverlay" class="session-loading-overlay">
-          <div class="spinner-large"></div>
-          <div id="sessionLoadingText" class="mt-4 text-slate-200 font-medium">Negotiating WebRTC PeerConnection...</div>
-          <div class="text-xs text-slate-400 mt-1">Establishing direct STUN peer-to-peer data channels</div>
+        <!-- Connection Info -->
+        <div class="tool-section info-section">
+          <span class="live-dot"></span>
+          <span id="remoteSessionId" class="session-code">Desk ---</span>
+          <span id="pingValue" class="ping-pill">-- ms</span>
         </div>
 
-        <!-- Mouse Lock Floating Hint -->
-        <div id="mouseLockHint" class="mouse-lock-hint">
-          <span>Click screen to capture mouse. Press <kbd>ESC</kbd> to release.</span>
-        </div>
-      </div>
+        <div class="tool-divider"></div>
 
-      <!-- Floating, Collapsible Top Control Bar -->
-      <div id="floatingTopBar" class="floating-top-bar">
-        <div class="control-bar-handle" title="Drag or Click to Pin">
-          <div class="drag-dots"></div>
-        </div>
+        <!-- Controls -->
+        <div class="tool-section actions-section">
+          <!-- Laser Pointer Toggle -->
+          <button id="btnTogglePointer" class="tool-btn active" title="Remote Laser Pointer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
+            <span>Pointer</span>
+          </button>
 
-        <div class="control-bar-content">
-          <!-- Session Live Metrics Pill -->
-          <div class="stats-group">
-            <div class="stat-badge latency-badge" id="pingBadge" title="Round Trip Time (RTT)">
-              <span class="stat-dot"></span>
-              <span id="statPing" class="stat-value font-mono">-- ms</span>
-            </div>
-            <div class="stat-badge" title="Frames Per Second">
-              <span class="stat-label">FPS</span>
-              <span id="statFps" class="stat-value font-mono text-cyan-400">60</span>
-            </div>
-            <div class="stat-badge" title="Stream Native Resolution">
-              <span class="stat-label">RES</span>
-              <span id="statResolution" class="stat-value font-mono text-slate-300">1920x1080</span>
-            </div>
-          </div>
+          <!-- Chat Drawer Trigger -->
+          <button id="btnToggleChat" class="tool-btn relative" title="Open Live Chat">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            <span>Chat</span>
+            <span id="chatBadge" class="unread-badge hidden">0</span>
+          </button>
 
-          <div class="bar-divider"></div>
+          <!-- File Transfer Button -->
+          <button id="btnSendFile" class="tool-btn" title="Send a File">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            <span>Send File</span>
+          </button>
+          <input type="file" id="hiddenFileInput" class="hidden">
 
-          <!-- Interaction Controls -->
-          <div class="control-buttons">
-            <!-- Toggle Remote Input Lock -->
-            <button id="btnToggleInput" class="ctrl-btn active" title="Toggle Remote Input (Mouse/Keyboard)">
-              <svg class="w-4 h-4 icon-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"></path><circle cx="12" cy="12" r="10"></circle></svg>
-              <span>Control On</span>
-            </button>
-
-            <!-- Fullscreen Toggle -->
-            <button id="btnToggleFullscreen" class="ctrl-btn" title="Toggle Fullscreen (F11)">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
-              <span class="hidden sm:inline">Fullscreen</span>
-            </button>
-
-            <!-- Audio Toggle -->
-            <button id="btnToggleAudio" class="ctrl-btn" title="Mute / Unmute Remote Sound">
-              <svg id="iconAudioOn" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-              <svg id="iconAudioOff" class="w-4 h-4 hidden text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
-              <span class="hidden sm:inline">Audio</span>
-            </button>
-
-            <!-- Special Keys Dropdown Trigger -->
-            <div class="relative dropdown-container">
-              <button id="btnSpecialKeys" class="ctrl-btn" title="Send Special Key Combinations">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"></path></svg>
-                <span>Keys</span>
-                <svg class="w-3 h-3 ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </button>
-
-              <div id="specialKeysMenu" class="dropdown-menu hidden">
-                <button class="dropdown-item" data-key="CAD">
-                  <span class="font-medium">Ctrl + Alt + Del</span>
-                  <span class="dropdown-shortcut">Task Mgr</span>
-                </button>
-                <button class="dropdown-item" data-key="WIN">
-                  <span class="font-medium">Windows Key</span>
-                  <span class="dropdown-shortcut">Start</span>
-                </button>
-                <button class="dropdown-item" data-key="ALTTAB">
-                  <span class="font-medium">Alt + Tab</span>
-                  <span class="dropdown-shortcut">Switch App</span>
-                </button>
-                <div class="dropdown-divider"></div>
-                <button class="dropdown-item" data-key="ESC">Escape</button>
-                <button class="dropdown-item" data-key="TAB">Tab</button>
-                <button class="dropdown-item" data-key="ENTER">Enter</button>
-              </div>
-            </div>
-
-            <!-- File Transfer Drawer Button -->
-            <button id="btnOpenFileTransfer" class="ctrl-btn relative" title="P2P File Transfer">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-              <span>Files</span>
-              <span id="fileBadge" class="file-badge hidden">1</span>
-            </button>
-
-            <!-- Clipboard Sync Button -->
-            <button id="btnOpenClipboard" class="ctrl-btn" title="Sync Clipboard">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
-              <span class="hidden sm:inline">Clipboard</span>
-            </button>
-
-            <!-- Stream Quality Preset -->
-            <button id="btnQuality" class="ctrl-btn" title="Adjust Quality (60 FPS Ultra / Balanced / Sharp)">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-              <span id="qualityText">60 FPS</span>
-            </button>
-          </div>
-
-          <div class="bar-divider"></div>
-
-          <!-- Red Disconnect Button -->
-          <button id="btnDisconnectSession" class="btn-disconnect" title="Disconnect Session">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
-            <span>Disconnect</span>
+          <!-- Fullscreen Toggle -->
+          <button id="btnFullscreen" class="tool-btn" title="Toggle Fullscreen">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
           </button>
         </div>
-      </div>
-    </div>
 
-    <!-- HOST ACTIVE STREAMING FLOATING WIDGET -->
-    <!-- Displayed on Host's screen while sharing to a remote viewer -->
-    <div id="hostFloatingWidget" class="host-floating-widget hidden">
-      <div class="flex items-center gap-3">
-        <div class="pulsing-record-dot"></div>
-        <div>
-          <div class="text-xs font-semibold text-slate-200">OmniCast Active Session</div>
-          <div id="hostViewerInfo" class="text-xs text-cyan-400">Remote user connected</div>
-        </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <button id="btnHostPauseInput" class="btn-xs btn-secondary" title="Lock remote inputs">
-          <span id="hostInputLockText">Lock Input</span>
+        <div class="tool-divider"></div>
+
+        <!-- End Session Button -->
+        <button id="btnDisconnect" class="btn-end-session" title="Disconnect Session">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+          <span>End Session</span>
         </button>
-        <button id="btnHostEndStream" class="btn-xs btn-danger">
-          Stop Sharing
-        </button>
+
       </div>
     </div>
-
-    <!-- MODAL 1: Host Incoming Connection Approval Modal -->
-    <div id="modalIncomingRequest" class="modal-backdrop hidden">
-      <div class="modal-card incoming-card">
-        <div class="modal-header">
-          <div class="flex items-center gap-3">
-            <div class="incoming-pulse-icon">
-              <svg class="w-6 h-6 text-cyan-400 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
-            </div>
-            <div>
-              <h3 class="modal-title">Incoming Remote Connection</h3>
-              <p class="modal-subtitle">A remote partner wants to access your desktop</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-body">
-          <div class="partner-info-box">
-            <div class="info-row">
-              <span class="info-label">Remote Partner:</span>
-              <span id="incomingPartnerId" class="info-value font-mono">Anonymous Peer</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Client Browser:</span>
-              <span id="incomingUserAgent" class="info-value">Chrome / WebRTC</span>
-            </div>
-          </div>
-
-          <div class="mt-4">
-            <span class="text-xs font-medium uppercase text-slate-400 tracking-wider">Granted Session Permissions</span>
-            <div class="mt-2 space-y-2 text-sm text-slate-300">
-              <div class="flex items-center justify-between p-2 rounded bg-slate-900/60 border border-slate-800">
-                <span>Screen & Audio Streaming</span>
-                <span class="text-emerald-400 text-xs font-semibold">ALWAYS ACTIVE</span>
-              </div>
-              <div class="flex items-center justify-between p-2 rounded bg-slate-900/60 border border-slate-800">
-                <span>Remote Mouse & Keyboard Relay</span>
-                <input type="checkbox" id="incomingPermControl" checked class="perm-checkbox">
-              </div>
-              <div class="flex items-center justify-between p-2 rounded bg-slate-900/60 border border-slate-800">
-                <span>Direct P2P File Transfer</span>
-                <input type="checkbox" id="incomingPermFiles" checked class="perm-checkbox">
-              </div>
-            </div>
-          </div>
-
-          <!-- Auto-reject Countdown Bar -->
-          <div class="mt-4">
-            <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
-              <span>Auto-dismiss in</span>
-              <span id="countdownTimer" class="font-mono text-cyan-400">30s</span>
-            </div>
-            <div class="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
-              <div id="countdownBar" class="h-full bg-gradient-to-r from-cyan-500 to-indigo-500 transition-all duration-1000 ease-linear" style="width: 100%;"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <button id="btnRejectConnection" class="btn-reject">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            <span>Decline</span>
-          </button>
-          <button id="btnAcceptConnection" class="btn-accept">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>Accept & Share Screen</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL 2: P2P File Transfer Drawer -->
-    <div id="drawerFileTransfer" class="drawer-backdrop hidden">
-      <div class="drawer-panel">
-        <div class="drawer-header">
-          <div class="flex items-center gap-2">
-            <svg class="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-            <h3 class="text-base font-semibold text-slate-100">P2P File Transfer</h3>
-          </div>
-          <button id="btnCloseFiles" class="icon-btn-sm">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-        </div>
-
-        <div class="drawer-body">
-          <!-- Drop Zone -->
-          <div id="fileDropZone" class="file-drop-zone">
-            <input type="file" id="fileInput" class="hidden" multiple>
-            <div class="drop-icon">
-              <svg class="w-8 h-8 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-            </div>
-            <div class="text-sm font-medium text-slate-200 mt-2">Drag & Drop files here</div>
-            <div class="text-xs text-slate-400 mt-1">or <button id="btnBrowseFiles" class="text-cyan-400 underline font-medium">browse local files</button></div>
-            <div class="text-[11px] text-slate-500 mt-2">Direct peer-to-peer 64KB chunk streaming via RTCDataChannel</div>
-          </div>
-
-          <!-- Transfer Progress & History -->
-          <div class="mt-4">
-            <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
-              <span class="font-semibold uppercase tracking-wider">Active Transfers</span>
-              <span id="transferCount">0 items</span>
-            </div>
-            <div id="fileTransferList" class="space-y-2">
-              <div class="text-xs text-slate-500 text-center py-4">No active or past transfers in this session.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL 3: Remote Clipboard Synchronizer -->
-    <div id="modalClipboard" class="modal-backdrop hidden">
-      <div class="modal-card clipboard-card">
-        <div class="modal-header">
-          <div class="flex items-center gap-2">
-            <svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
-            <h3 class="modal-title">Clipboard Sync</h3>
-          </div>
-          <button id="btnCloseClipboard" class="icon-btn-sm">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <p class="text-xs text-slate-400 mb-2">Send or receive text snippets between this device and the remote computer.</p>
-          <textarea id="clipboardText" rows="6" placeholder="Type or paste text to send to remote desktop..." class="styled-textarea font-mono text-sm"></textarea>
-          <div class="flex items-center justify-between mt-3">
-            <button id="btnPasteFromLocal" class="btn-secondary text-xs">
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path></svg>
-              <span>Paste from Local</span>
-            </button>
-            <button id="btnSendClipboardToRemote" class="btn-primary text-xs">
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-              <span>Send to Remote Desk</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL 4: System Help & Keyboard Shortcuts -->
-    <div id="modalHelp" class="modal-backdrop hidden">
-      <div class="modal-card help-card">
-        <div class="modal-header">
-          <div class="flex items-center gap-2">
-            <svg class="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-            <h3 class="modal-title">OmniCast Quick Guide & Shortcuts</h3>
-          </div>
-          <button id="btnCloseHelp" class="icon-btn-sm">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-        </div>
-        <div class="modal-body space-y-4 text-sm text-slate-300">
-          <div>
-            <h4 class="font-semibold text-slate-100 flex items-center gap-2">
-              <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><line x1="6" y1="8" x2="6.01" y2="8"></line><line x1="10" y1="8" x2="10.01" y2="8"></line></svg>
-              <span>Keyboard Shortcuts During Remote Session</span>
-            </h4>
-            <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
-              <div class="shortcut-pill"><kbd>F11</kbd> <span>Toggle Fullscreen</span></div>
-              <div class="shortcut-pill"><kbd>ESC</kbd> <span>Release Pointer Lock</span></div>
-              <div class="shortcut-pill"><kbd>Ctrl+Alt+H</kbd> <span>Toggle Top Bar</span></div>
-              <div class="shortcut-pill"><kbd>Ctrl+Alt+M</kbd> <span>Toggle Input Control</span></div>
-            </div>
-          </div>
-          <div>
-            <h4 class="font-semibold text-slate-100">How WebRTC Remote Control Works</h4>
-            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
-              OmniCast negotiates a direct peer-to-peer WebRTC connection using Google STUN servers. Video is rendered in real time with hardware-accelerated VP8/VP9 or H.264 codecs. Mouse clicks and keyboard strokes are mapped to normalized coordinates (0.0 to 1.0) and transferred over an unordered, low-latency RTCDataChannel.
-            </p>
-          </div>
-          <div class="p-3 bg-slate-900/70 border border-slate-800 rounded-lg text-xs">
-            <div class="font-semibold text-cyan-400">Host OS Native Control</div>
-            <p class="text-slate-400 mt-0.5">When running on Windows with Node.js host controller active, incoming data channel events can trigger real native mouse movements and keystrokes on the host desktop.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TOAST NOTIFICATION CONTAINER -->
-    <div id="toastContainer" class="toast-container"></div>
 
   </div>
 
-  <!-- Client Libraries: Socket.io & WebRTC Engine -->
-  <script src="/js/socket.io.min.js"></script>
-  <script src="/js/peerjs.min.js"></script>
+  <!-- HOST ACTIVE SCREEN SHARING BAR -->
+  <div id="hostFloatingBar" class="host-bar hidden">
+    <div class="host-bar-content">
+      <span class="live-dot-red"></span>
+      <div>
+        <span class="host-bar-title">Sharing your screen</span>
+        <span id="hostPartnerId" class="host-bar-sub">Connected with Remote Desk</span>
+      </div>
+      <button id="btnHostStopShare" class="btn-host-stop">Stop Sharing</button>
+    </div>
+  </div>
+
+  <!-- INCOMING CONNECTION MODAL (ON HOST SCREEN) -->
+  <div id="modalIncoming" class="modal-backdrop hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+        </div>
+        <div>
+          <h3 class="modal-title">Incoming Remote Connection</h3>
+          <p class="modal-sub">A partner is requesting to view your screen.</p>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <div class="partner-card">
+          <span class="label">Partner ID:</span>
+          <span id="incomingCallerId" class="value">482-910</span>
+        </div>
+        <p class="modal-notice">When you accept, your browser will ask you to choose which screen or window you want to share.</p>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btnDeclineIncoming" class="btn-secondary">Decline</button>
+        <button id="btnAcceptIncoming" class="btn-primary-emerald">Accept & Share Screen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAT DRAWER -->
+  <aside id="chatDrawer" class="chat-drawer hidden">
+    <div class="drawer-header">
+      <div class="flex items-center gap-2">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        <h3>Live Session Chat</h3>
+      </div>
+      <button id="btnCloseChat" class="btn-close">&times;</button>
+    </div>
+
+    <div id="chatMessages" class="chat-messages">
+      <div class="chat-intro">Session connected. Send messages or paste text in real time.</div>
+    </div>
+
+    <form id="chatForm" class="chat-input-bar">
+      <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off">
+      <button type="submit" class="btn-chat-send">Send</button>
+    </form>
+  </aside>
+
+  <!-- FILE TRANSFER PROGRESS TOAST/MODAL -->
+  <div id="fileToast" class="file-toast hidden">
+    <div class="file-toast-header">
+      <span id="fileToastTitle">Sending File...</span>
+      <button id="btnCloseFileToast" class="btn-close">&times;</button>
+    </div>
+    <div id="fileToastName" class="file-toast-name">filename.zip</div>
+    <div class="file-progress-track">
+      <div id="fileProgressBar" class="file-progress-fill" style="width: 0%;"></div>
+    </div>
+    <div class="file-toast-footer">
+      <span id="fileProgressPct">0%</span>
+      <span id="fileStatusText">Transferring P2P</span>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATIONS CONTAINER -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Load PeerJS library (Exact v1.5.2 requested) with local fallback -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script>
+    if (typeof Peer === 'undefined') {
+      document.write('<script src="/js/peerjs.min.js"><\/script>');
+    }
+  </script>
   <script src="/js/app.js"></script>
 </body>
 </html>
