@@ -1,0 +1,25 @@
+{
+  "name": "omnicast",
+  "version": "1.0.0",
+  "description": "Ultra-Low Latency WebRTC Remote Desktop Web Application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "echo OmniCast is ready for deployment"
+  },
+  "keywords": [
+    "webrtc",
+    "remote-desktop",
+    "screen-share",
+    "low-latency",
+    "anydesk-alternative"
+  ],
+  "author": "OmniCast Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
