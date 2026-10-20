@@ -10,7 +10,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="/css/style.css">
 
   <style>
     :root {
@@ -611,6 +610,18 @@
     .toast-warning { border-left: 4px solid #f59e0b; }
     .toast-info { border-left: 4px solid var(--accent-blue); }
     @keyframes toastFade { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Connect Button Spinner */
+    .spinner {
+      width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,0.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    
+    /* Toast fade-out transition */
+    .toast {
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
   </style>
 </head>
 <body class="light-theme">
@@ -728,7 +739,7 @@
           </div>
 
           <!-- Code Input Box -->
-          <form id="connectForm" class="connect-form" onsubmit="return false;">
+          <form id="connectForm" class="connect-form">
             <div class="input-container">
               <input 
                 type="text" 
@@ -937,7 +948,7 @@
       <div class="chat-welcome">Say hello in real time! 👋</div>
     </div>
 
-    <form id="chatForm" class="chat-input-row" onsubmit="return false;">
+    <form id="chatForm" class="chat-input-row">
       <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off">
       <button type="submit" id="btnSendChat" class="btn-send-chat">Send</button>
     </form>

@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  // Global Public Google & Twilio STUN servers for cross-network WebRTC traversal
+  // Global Public Google & Twilio STUN servers + free TURN relay for cross-network WebRTC traversal
   const PEER_CONFIG = {
     config: {
       iceServers: [
@@ -15,7 +15,23 @@
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' }
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        // Free TURN relay servers (OpenRelay by Metered) for symmetric NAT traversal
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
       ],
       iceCandidatePoolSize: 10
     },
@@ -494,6 +510,10 @@
           const btnName = ev.button === 2 ? 'Right Click' : (ev.button === 1 ? 'Middle Click' : 'Left Click');
           showHostKeyHUD(`🖱️ Remote: ${btnName}`);
           sound.play(600, 0.05);
+        } else if (ev.type === 'dblclick') {
+          showHostKeyHUD('🖱️ Remote: Double Click');
+          sound.play(650, 0.05);
+          setTimeout(() => sound.play(650, 0.05), 80);
         } else if (ev.type === 'keydown') {
           const keyLabel = ev.key && ev.key.length === 1 ? `"${ev.key}"` : `[${ev.key}]`;
           showHostKeyHUD(`⌨️ Remote Typed: ${keyLabel}`);
@@ -571,8 +591,23 @@
         sound.play(600, 0.1);
       } else if (data.type === 'file-chunk') {
         if (!state.incomingFile) return;
-        state.incomingFile.chunks.push(data.chunk);
-        state.incomingFile.receivedBytes += data.chunk.byteLength;
+        try {
+          if (typeof data.chunk === 'string') {
+            const bin = atob(data.chunk);
+            const len = bin.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+              bytes[i] = bin.charCodeAt(i);
+            }
+            state.incomingFile.chunks.push(bytes);
+            state.incomingFile.receivedBytes += data.byteLength || len;
+          } else if (data.chunk instanceof ArrayBuffer || ArrayBuffer.isView(data.chunk)) {
+            state.incomingFile.chunks.push(data.chunk);
+            state.incomingFile.receivedBytes += (data.chunk.byteLength || 0);
+          }
+        } catch (e) {
+          console.warn('[Chunk decode error]', e);
+        }
         const pct = Math.min(100, Math.round((state.incomingFile.receivedBytes / state.incomingFile.size) * 100));
         const fill = $('fileProgressFill');
         if (fill) fill.style.width = `${pct}%`;
@@ -612,7 +647,8 @@
   // =========================================================================
   // Viewer Connect Action
   // =========================================================================
-  function startConnect() {
+  function startConnect(e) {
+    if (e) e.preventDefault();
     const input = $('targetCodeInput');
     const clean = cleanDigits(input ? input.value : '');
 
@@ -637,7 +673,7 @@
     if (spinner) spinner.classList.remove('hidden');
 
     try {
-      const conn = state.peer.connect('omni-' + clean, { reliable: true });
+      const conn = state.peer.connect('omni-' + clean, { reliable: true, serialization: 'json' });
       state.activeConn = conn;
       listenToDataChannel(conn);
 
@@ -705,11 +741,14 @@
       try {
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
-          audio: false
+          audio: true
         });
       } catch (e1) {
         try {
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
+            audio: false
+          });
         } catch (e2) {
           stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         }
@@ -871,13 +910,24 @@
     function readNext() {
       const start = chunkIndex * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, file.size);
-      reader.readAsArrayBuffer(file.slice(start, end));
+      reader.readAsDataURL(file.slice(start, end));
     }
 
     reader.onload = (e) => {
+      if (!state.activeConn || !state.activeConn.open) {
+        if (status) status.textContent = 'Connection lost during transfer.';
+        return;
+      }
+      const dataUrl = e.target.result;
+      const base64 = dataUrl.split(',')[1] || '';
+      const start = chunkIndex * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const rawChunkLen = end - start;
+
       state.activeConn.send({
         type: 'file-chunk',
-        chunk: e.target.result
+        chunk: base64,
+        byteLength: rawChunkLen
       });
 
       chunkIndex++;
@@ -886,7 +936,7 @@
       if (status) status.textContent = `Sending... ${pct}%`;
 
       if (chunkIndex < totalChunks) {
-        setTimeout(readNext, 10);
+        setTimeout(readNext, 12);
       } else {
         state.activeConn.send({ type: 'file-end' });
         if (status) status.textContent = 'Sent Successfully!';
@@ -1030,8 +1080,9 @@
       if (input) input.value = formatDisplay(clean);
     });
 
-    // Connect Form Submit
+    // Connect Form Submit & Button Click Fallback
     on($('connectForm'), 'submit', startConnect);
+    on($('btnConnect'), 'click', startConnect);
     on($('btnCancelConnect'), 'click', () => stopAllSessions('Cancelled connection.'));
 
     // Host Incoming Modal Buttons
@@ -1224,6 +1275,18 @@
       if (!coords) return;
       sendRemoteInput({
         type: 'mouseup',
+        button: e.button,
+        xPercent: coords.xPercent,
+        yPercent: coords.yPercent
+      });
+    });
+
+    on(video, 'dblclick', (e) => {
+      if (state.mode !== 'control') return;
+      const coords = getNormalizedCoords(e);
+      if (!coords) return;
+      sendRemoteInput({
+        type: 'dblclick',
         button: e.button,
         xPercent: coords.xPercent,
         yPercent: coords.yPercent
