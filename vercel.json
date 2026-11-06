@@ -3,6 +3,7 @@
   "cleanUrls": true,
   "rewrites": [
     { "source": "/api/status", "destination": "/api/status.js" },
+    { "source": "/api/host-input", "destination": "/api/host-input.js" },
     { "source": "/api/(.*)", "destination": "/api/$1" }
   ],
   "headers": [
@@ -10,6 +11,8 @@
       "source": "/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" },
         { "key": "X-Frame-Options", "value": "SAMEORIGIN" }
       ]
     },

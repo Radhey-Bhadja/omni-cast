@@ -1,66 +1,132 @@
-# OmniCast — Browser-to-Browser Remote Desktop
+# OmniCast — Ultra-Fast WebRTC Remote Desktop
 
 <div align="center">
-  <img src="public/logo.png" alt="OmniCast Logo" width="140" style="border-radius: 18px; margin-bottom: 14px;">
+  <img src="logo.png" alt="OmniCast Logo" width="120" style="border-radius: 18px; margin-bottom: 12px;">
   
-  <h3>Ultra-Low Latency Peer-to-Peer Screen Streaming</h3>
-  <p>A clean, human-crafted remote screen viewer powered by WebRTC and PeerJS with public Google STUN servers. Connect two real computers across different networks with a simple 6-digit Desk ID.</p>
+  <h3>Real-Time, Browser-Based Remote Desktop Powered by WebRTC & Node.js</h3>
+  <p>Ultra-low latency browser-to-browser screen viewing, live mouse & keyboard input control, laser pointer, real-time chat, and chunked file transfer — AnyDesk experience directly in your browser.</p>
 
-  <p><b>Live-ready for Vercel, Netlify, Cloudflare Pages, or Local Node.js</b></p>
+  <p>
+    <a href="https://vercel.com"><img src="https://img.shields.io/badge/Deploy%20on-Vercel-black?style=flat&logo=vercel" alt="Deploy to Vercel"></a>
+    <img src="https://img.shields.io/badge/WebRTC-P2P%20Mesh-blue" alt="WebRTC P2P">
+    <img src="https://img.shields.io/badge/FPS-60%20FPS-green" alt="60 FPS">
+    <img src="https://img.shields.io/badge/License-MIT-purple" alt="License MIT">
+  </p>
 </div>
 
 ---
 
-## ✨ Features
+## 🌟 Key Capabilities
 
-- **Direct P2P Screen Capture**: Stream screens at 60 FPS directly between browsers using `navigator.mediaDevices.getDisplayMedia`.
-- **Zero Server Dependency**: PeerJS signaling with Google STUN servers (`stun:stun.l.google.com:19302`) eliminates the need for stateful WebSocket backends.
-- **6-Digit Desk ID**: Clean `XXX-XXX` numerical codes (e.g., `482-910`) for 1-click connection.
-- **Consent Verification**: Hosts receive an interactive popup modal ("Accept Connection & Share Screen") before any video stream begins.
-- **Remote Laser Pointer**: Real-time laser pointer and click ripple effects relayed over an unordered low-latency `RTCDataChannel`.
-- **Live Text Chat**: Embedded bi-directional chat drawer with unread message badges.
-- **Chunked File Transfer**: High-speed P2P 64KB file transfers with progress bars and auto-download.
-- **Clean Aesthetic UI**: Minimalist slate design inspired by Linear and CleanShot with zero AI clutter or fake buttons.
+- **Ultra-Low Latency 60 FPS Video**: Hardware-accelerated WebRTC media streaming (`navigator.mediaDevices.getDisplayMedia`) with audio capture.
+- **6-Digit Desk Code**: Instant, AnyDesk-style `XXX XXX` numerical connection code (e.g. `482 910`) with 1-click copy.
+- **Two-Way Consent Protection**: Hosts see an incoming request modal with partner code before sharing.
+- **Full Mouse & Keyboard Remote Control**:
+  - Live normalized pointer coordinates with letterbox compensation and stretch mode.
+  - Left, right (context menu), and double clicks.
+  - Smooth scroll wheel relay.
+  - Full keyboard keystroke forwarding (alphanumeric, arrows, Backspace, Enter, Tab, shortcuts).
+  - Window-level drag safety (no stuck mouse buttons when dragging outside video container).
+- **Special System Keys & String Injection**:
+  - `Ctrl + Alt + Del` (Ctrl+Shift+Esc Task Manager invocation).
+  - Windows Key (`Win`).
+  - `Alt + Tab` application switcher.
+  - Remote text typer to send entire strings or clipboard snippets.
+- **Native OS Input Bridge (Node.js)**:
+  - When running locally via `server.js` or `start.bat`, Windows host receives physical OS cursor & keyboard simulation via low-overhead user32.dll P/Invoke.
+- **Visual Presentation & Laser Pointer**:
+  - Interactive laser pointer mode with dynamic glowing beacon and click ripple effects.
+  - On-screen remote cursor tag and HUD notifications for remote typing.
+- **Built-in Real-Time Chat & File Transfer**:
+  - Floating bi-directional live chat drawer with unread counters.
+  - P2P 64KB chunked file transfer with live progress bar and automatic file download.
+- **Modern Clean UI**:
+  - Sleek linear-inspired theme with 1-click Light / Dark theme toggle.
+  - Bottom floating pill toolbar with fit/stretch toggle, audio mute, fullscreen, and latency RTT monitor.
 
 ---
 
-## 🚀 Live Deployment to Vercel (1-Click Ready)
+## 🚀 Live Deployment to Vercel
 
-1. Push this repository to GitHub:
+OmniCast is configured for instant, 1-click live deployment on **Vercel** with zero backend infrastructure required:
+
+1. Push this repository to your GitHub account:
    ```bash
    git add .
-   git commit -m "feat: live-ready PeerJS WebRTC remote desktop with 6-digit Desk IDs"
+   git commit -m "feat: complete functional WebRTC remote desktop for Vercel"
    git push origin main
    ```
-2. In the [Vercel Dashboard](https://vercel.com/new), click **Import Repository**.
-3. Keep default settings (Framework: **Other**, Root Directory: `./`).
-4. Click **Deploy**.
+2. Go to [Vercel Dashboard](https://vercel.com/new) and click **Import Git Repository**.
+3. Select `omni-cast` (or `Radhey-Bhadja/omni-cast`).
+4. Keep the default settings:
+   - **Framework Preset**: `Other`
+   - **Root Directory**: `./`
+   - **Build Command**: Leave default
+   - **Output Directory**: Leave default
+5. Click **Deploy**.
 
-Your app is live with zero backend configuration needed!
+Your WebRTC Remote Desktop is immediately live on your Vercel URL!
 
 ---
 
-## 💻 Running Locally
+## 💻 Running Locally with Node.js & Windows OS Control
+
+To run locally with the active Windows OS Mouse & Keyboard Controller:
 
 ```bash
+# 1. Install dependencies
 npm install
+
+# 2. Launch the server
 npm start
+# or on Windows simply double click:
+# start.bat
 ```
-Open [`http://localhost:3000`](http://localhost:3000) in your browser.
+
+Open `http://localhost:3000` in your browser. The native Windows controller automatically initializes (`user32.dll` via PowerShell P/Invoke).
 
 ---
 
 ## 📖 How to Use
 
-1. **Host Computer**:
+1. **Host Computer (Share Screen)**:
    - Open OmniCast.
-   - Note your 6-digit Desk Code (e.g. `482-910`) and click **Copy Code**.
-2. **Viewer Computer**:
-   - Open OmniCast on another computer or browser tab.
-   - Enter your partner's 6-digit code in **Connect to a Computer** and click **Connect Now**.
-3. **Approval**:
-   - An incoming connection popup appears on the Host screen.
-   - Click **Accept & Share Screen** and pick your screen or application window.
-4. **Live Session**:
-   - The viewer sees the live 60 FPS remote screen.
-   - Use the bottom floating toolbar to toggle the Remote Laser Pointer, open the Live Chat drawer, send files, or toggle fullscreen.
+   - Note your 6-digit code in the **This Desk** card (e.g. `482 910`) and click **Copy Code**.
+2. **Viewer Computer (Control Partner)**:
+   - Open OmniCast in another computer, browser window, or mobile device.
+   - Enter your partner's 6-digit code in **Remote Desk** and click **Connect Now**.
+3. **Approve Connection**:
+   - Host receives an alert modal: *"Your partner wants to view and control your screen"*.
+   - Click **Yes, Allow Control** and choose your screen, window, or tab.
+4. **Active Session**:
+   - Remote screen displays instantly at 60 FPS.
+   - Use the bottom floating toolbar to toggle **Control** or **Laser**, send **Keys ⌨️**, open **Chat**, or drop **Files**.
+
+---
+
+## 🛠️ Architecture
+
+```
+OmniCast/
+├── index.html            # Primary single-page web app (light & dark theme)
+├── css/style.css         # AnyDesk-grade styles & responsive layout
+├── js/
+│   ├── app.js            # WebRTC PeerJS engine, DataChannel input, laser, chat & files
+│   └── peerjs.min.js     # Bundled PeerJS library fallback
+├── api/
+│   ├── index.js          # Vercel serverless entrypoint
+│   ├── status.js         # Health check & environment status endpoint
+│   └── host-input.js     # Serverless input relay endpoint
+├── public/               # Static distribution directory (mirrored)
+├── server.js             # Node.js Express & Socket.io server + host input relay
+├── native-controller.js  # Windows OS user32.dll P/Invoke mouse & keyboard bridge
+├── start.bat             # 1-click Windows starter script
+├── vercel.json           # Vercel routing, CORS headers & clean URLs configuration
+└── package.json          # Node.js project manifest & scripts
+```
+
+---
+
+## 📄 License
+
+MIT License © 2026 OmniCast Team

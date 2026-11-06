@@ -98,17 +98,17 @@ while($line = [Console]::ReadLine()) {
             [WinInputHelper]::mouse_event($MOUSEEVENTF_WHEEL, 0, 0, [uint]$delta, [UIntPtr]::Zero)
         }
         "KDOWN" {
-            $vk = [byte]$parts[1]
+            $vk = [byte]([int]$parts[1] -band 0xFF)
             [WinInputHelper]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
         }
         "KUP" {
-            $vk = [byte]$parts[1]
+            $vk = [byte]([int]$parts[1] -band 0xFF)
             [WinInputHelper]::keybd_event($vk, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
         }
         "SPECIAL" {
             $action = $parts[1]
             if ($action -eq "CAD") {
-                # Windows intercepts Ctrl+Alt+Del for security; Ctrl+Shift+Esc opens Task Manager
+                # Ctrl+Shift+Esc reliably opens Task Manager on Windows
                 [WinInputHelper]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero) # Ctrl
                 [WinInputHelper]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero) # Shift
                 [WinInputHelper]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero) # Esc
@@ -149,7 +149,7 @@ while($line = [Console]::ReadLine()) {
       });
 
       this.process.stderr.on('data', (data) => {
-        // Log errors only if needed
+        // Silent
       });
 
       this.process.on('close', (code) => {
@@ -193,7 +193,6 @@ while($line = [Console]::ReadLine()) {
         break;
 
       case 'wheel':
-        // deltaY in browser is typically 100 or -100
         const delta = Math.sign(payload.deltaY || 0) * -120;
         this.execute(`WHEEL ${delta}`);
         break;
@@ -211,8 +210,20 @@ while($line = [Console]::ReadLine()) {
         break;
 
       case 'special':
-        if (payload.key) {
-          this.execute(`SPECIAL ${payload.key}`);
+        const action = payload.key || payload.action;
+        if (action) {
+          this.execute(`SPECIAL ${action}`);
+        }
+        break;
+
+      case 'type-string':
+      case 'text':
+        if (payload.text && typeof payload.text === 'string') {
+          for (let i = 0; i < payload.text.length; i++) {
+            const code = payload.text.charCodeAt(i) & 0xFF;
+            this.execute(`KDOWN ${code}`);
+            this.execute(`KUP ${code}`);
+          }
         }
         break;
     }

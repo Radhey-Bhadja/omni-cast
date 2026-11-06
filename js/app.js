@@ -90,7 +90,8 @@
     connectTimeoutTimer: null,
     lastMouseMoveTime: 0,
     hasServerApi: false,
-    reconnectTimer: null
+    reconnectTimer: null,
+    isMouseDown: false
   };
 
   // Sound Engine (Web Audio API)
@@ -361,8 +362,17 @@
         if (connectionStatus) connectionStatus.className = 'status-badge status-online';
       });
 
+      state.peer.on('disconnected', () => {
+        console.warn('[PeerJS] Disconnected from signaling server. Reconnecting...');
+        if (statusLabel) statusLabel.textContent = 'Reconnecting...';
+        if (connectionStatus) connectionStatus.className = 'status-badge status-connecting';
+        if (state.peer && !state.peer.destroyed) {
+          state.peer.reconnect();
+        }
+      });
+
       state.peer.on('error', (err) => {
-        console.warn('[PeerJS]', err.type, err.message);
+        console.warn('[PeerJS Error]', err.type, err.message);
         if (err.type === 'unavailable-id') {
           const fresh = String(Math.floor(100000 + Math.random() * 900000));
           state.myCode = fresh;
@@ -419,6 +429,11 @@
 
         call.on('close', () => {
           stopAllSessions('Your partner stopped sharing their screen.');
+        });
+
+        call.on('error', (err) => {
+          console.error('[Call Error]', err);
+          stopAllSessions('Stream connection error: ' + (err.message || err));
         });
       });
 
@@ -546,13 +561,7 @@
         const pad = $('hostScratchpadInput');
         if (pad && data.text) pad.value += data.text + ' ';
         if (data.text && state.hasServerApi) {
-          for (let i = 0; i < data.text.length; i++) {
-            const char = data.text[i];
-            setTimeout(() => {
-              relayToNativeHost({ type: 'keydown', key: char, keyCode: char.charCodeAt(0) });
-              relayToNativeHost({ type: 'keyup', key: char, keyCode: char.charCodeAt(0) });
-            }, i * 30);
-          }
+          relayToNativeHost({ type: 'type-string', text: data.text });
         }
         sound.success();
       }
@@ -663,6 +672,12 @@
       return;
     }
 
+    if (!state.peer || !state.peer.open) {
+      showToast('Connecting to network, please wait a moment...', 'warning');
+      initPeer();
+      return;
+    }
+
     state.targetCode = clean;
 
     const btnConnect = $('btnConnect');
@@ -740,7 +755,12 @@
       let stream;
       try {
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
+          video: {
+            cursor: 'always',
+            frameRate: { ideal: 60, max: 60 },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
           audio: true
         });
       } catch (e1) {
@@ -812,6 +832,12 @@
 
     const clientX = e.clientX - rect.left;
     const clientY = e.clientY - rect.top;
+
+    if (video.classList.contains('fit-stretch')) {
+      const xPercent = Math.max(0, Math.min(1, clientX / rect.width));
+      const yPercent = Math.max(0, Math.min(1, clientY / rect.height));
+      return { xPercent, yPercent };
+    }
 
     const videoWidth = video.videoWidth || rect.width;
     const videoHeight = video.videoHeight || rect.height;
@@ -1244,6 +1270,7 @@
     });
 
     on(video, 'mousedown', (e) => {
+      state.isMouseDown = true;
       const container = $('videoContainer');
       if (container) container.focus();
       const coords = getNormalizedCoords(e);
@@ -1270,6 +1297,7 @@
     });
 
     on(video, 'mouseup', (e) => {
+      state.isMouseDown = false;
       if (state.mode !== 'control') return;
       const coords = getNormalizedCoords(e);
       if (!coords) return;
@@ -1279,6 +1307,20 @@
         xPercent: coords.xPercent,
         yPercent: coords.yPercent
       });
+    });
+
+    // Window-level mouseup fallback so dragging outside video never leaves button stuck
+    window.addEventListener('mouseup', (e) => {
+      if (state.isMouseDown && state.mode === 'control') {
+        state.isMouseDown = false;
+        const coords = getNormalizedCoords(e) || { xPercent: 0.5, yPercent: 0.5 };
+        sendRemoteInput({
+          type: 'mouseup',
+          button: e.button,
+          xPercent: coords.xPercent,
+          yPercent: coords.yPercent
+        });
+      }
     });
 
     on(video, 'dblclick', (e) => {

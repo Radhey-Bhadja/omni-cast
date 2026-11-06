@@ -27,13 +27,14 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
 
 // In-Memory Room Registry: code -> { hostSocketId, pin, permissions, viewerSocketId, createdAt }
 const activeRooms = new Map();
 // Socket to Code mapping: socketId -> { role: 'host' | 'viewer', code }
 const socketDirectory = new Map();
 
-// Normalize 9-digit code (remove spaces, hyphens)
+// Normalize 6-digit code (remove spaces, hyphens)
 function normalizeCode(rawCode) {
   if (!rawCode) return '';
   return String(rawCode).replace(/[\s-]/g, '').trim();
@@ -72,11 +73,11 @@ app.post('/api/host-input', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`[Socket] Connected: ${socket.id}`);
 
-  // 1. Host registers their 9-digit code
+  // 1. Host registers their 6-digit code
   socket.on('register-host', ({ code, pin, permissions }, callback) => {
     const cleanCode = normalizeCode(code);
-    if (!cleanCode || cleanCode.length !== 9) {
-      if (callback) callback({ success: false, error: 'Invalid 9-digit access code' });
+    if (!cleanCode || cleanCode.length < 6 || cleanCode.length > 9) {
+      if (callback) callback({ success: false, error: 'Invalid 6-digit access code' });
       return;
     }
 
@@ -107,11 +108,11 @@ io.on('connection', (socket) => {
     if (callback) callback({ success: true, code: cleanCode });
   });
 
-  // 2. Viewer requests connection to Host via 9-digit code
+  // 2. Viewer requests connection to Host via 6-digit code
   socket.on('request-connection', ({ code, pin, clientInfo }, callback) => {
     const cleanCode = normalizeCode(code);
-    if (!cleanCode || cleanCode.length !== 9) {
-      if (callback) callback({ success: false, error: 'Please enter a valid 9-digit Access Code.' });
+    if (!cleanCode || cleanCode.length < 6 || cleanCode.length > 9) {
+      if (callback) callback({ success: false, error: 'Please enter a valid 6-digit Access Code.' });
       return;
     }
 
