@@ -1155,34 +1155,15 @@
     }
   }
 
-  function updateThemeUI(isLight) {
-    const icon = $('themeIcon');
-    const label = $('themeLabel');
-    const btn = $('btnThemeToggle');
-    if (icon) icon.textContent = isLight ? '☀️' : '🌙';
-    if (label) label.textContent = isLight ? 'Light Mode' : 'Dark Mode';
-    if (btn) {
-      btn.setAttribute('aria-checked', isLight ? 'true' : 'false');
-      btn.title = isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme';
-    }
-  }
-
   // =========================================================================
   // UI Event Bindings
   // =========================================================================
   function bindUI() {
-    // Theme Toggle Switch (Defaults to Dark AnyDesk Theme)
-    const currentIsLight = document.body.classList.contains('light-theme');
-    updateThemeUI(currentIsLight);
-
-    on($('btnThemeToggle'), 'click', () => {
-      const isLight = document.body.classList.toggle('light-theme');
-      updateThemeUI(isLight);
-      try {
-        localStorage.setItem('omnicast_theme', isLight ? 'light' : 'dark');
-      } catch (e) {}
-      showToast(isLight ? '☀️ Light Theme Enabled' : '🌙 Dark Theme Enabled', 'info');
-    });
+    // Enforce AnyDesk Dark Theme
+    try {
+      localStorage.removeItem('omnicast_theme');
+      document.body.classList.remove('light-theme');
+    } catch (e) {}
 
     // Dismiss file banner if present
     on($('btnDismissScheme'), 'click', () => {

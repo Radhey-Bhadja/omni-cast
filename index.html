@@ -197,105 +197,34 @@
       transition: all 0.2s ease;
     }
     .header-inner {
-      max-width: 1100px; margin: 0 auto; padding: 0.85rem 1.5rem;
-      display: flex; align-items: center; justify-content: space-between;
+      max-width: 900px; margin: 0 auto; padding: 0.75rem 1.5rem;
+      display: flex; align-items: center; justify-content: flex-start;
     }
-    .brand { display: flex; align-items: center; gap: 0.85rem; }
+    .brand { display: flex; align-items: center; }
     .brand-logo {
-      width: 36px; height: 36px; border-radius: 10px; object-fit: contain;
-      filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));
+      width: 40px; height: 40px; border-radius: 10px; object-fit: contain;
+      filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.35));
+      transition: transform 0.2s ease;
     }
-    .brand-name {
-      font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text-white); line-height: 1.1;
-    }
-    .brand-desc { font-size: 0.72rem; color: var(--text-gray); }
-    .header-actions { display: flex; align-items: center; gap: 0.75rem; }
-    .theme-toggle-switch {
-      display: inline-flex; align-items: center; gap: 0.55rem;
-      padding: 0.35rem 0.8rem; border-radius: 9999px;
-      background: var(--bg-card); border: 1px solid var(--border-card);
-      color: var(--text-white); font-size: 0.82rem; font-weight: 700;
-      cursor: pointer; transition: all 0.2s ease;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); user-select: none;
-    }
-    .theme-toggle-switch:hover {
-      background: var(--bg-card-hover); border-color: var(--border-highlight);
-      transform: translateY(-1px);
-    }
-    .theme-toggle-switch:active { transform: translateY(0); }
-    .switch-pill {
-      position: relative; width: 38px; height: 20px; border-radius: 9999px;
-      background: #1e293b; border: 1px solid rgba(255, 255, 255, 0.18);
-      display: inline-flex; align-items: center; padding: 2px;
-      transition: background-color 0.2s ease, border-color 0.2s ease;
-    }
-    body.light-theme .switch-pill {
-      background: #e2e8f0; border-color: rgba(0, 0, 0, 0.15);
-    }
-    .switch-thumb {
-      width: 14px; height: 14px; border-radius: 50%;
-      background: #38bdf8; box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
-      transform: translateX(0);
-      transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease, box-shadow 0.2s ease;
-    }
-    body.light-theme .switch-thumb {
-      transform: translateX(18px);
-      background: #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
-    }
-    .theme-switch-icon {
-      font-size: 1rem; line-height: 1; display: inline-flex; align-items: center;
-    }
-    .theme-switch-label {
-      font-size: 0.78rem; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap;
-    }
-    body.light-theme .theme-toggle-switch {
-      background: #ffffff; border-color: rgba(0, 0, 0, 0.12); color: #0f172a;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-    }
-    body.light-theme .theme-toggle-switch:hover {
-      background: #f8fafc; border-color: rgba(0, 0, 0, 0.2);
-    }
-    .status-badge {
-      display: inline-flex; align-items: center; gap: 0.45rem;
-      font-size: 0.78rem; font-weight: 600; padding: 0.35rem 0.85rem;
-      border-radius: 9999px; background: var(--accent-green-bg);
-      border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981;
-    }
-    .status-dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green);
-    }
-    .status-connecting {
-      background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.3); color: #f59e0b;
-    }
-    .status-connecting .status-dot { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+    .brand-logo:hover { transform: scale(1.04); }
     .main-view {
       flex: 1; display: flex; align-items: center; justify-content: center;
-      padding: 2.5rem 1.5rem 3.5rem;
+      padding: 1.5rem 1.5rem;
+      min-height: calc(100vh - 60px);
     }
-    .container { max-width: 980px; width: 100%; margin: 0 auto; }
-    .welcome-text { text-align: center; margin-bottom: 2.5rem; }
-    .hero-tag {
-      display: inline-flex; align-items: center; gap: 0.4rem;
-      font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.06em; color: var(--accent-blue); background: var(--accent-blue-bg);
-      padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 0.85rem;
-      border: 1px solid rgba(59, 130, 246, 0.25);
+    .container {
+      max-width: 900px; width: 100%; margin: 0 auto;
+      display: flex; flex-direction: column; gap: 1.5rem;
     }
-    .welcome-text h1 {
-      font-size: 2.35rem; font-weight: 800; letter-spacing: -0.03em; color: var(--text-white);
-      line-height: 1.2; margin-bottom: 0.65rem;
-    }
-    .welcome-text p { font-size: 1.05rem; color: var(--text-gray); max-width: 620px; margin: 0 auto; }
     .cards-wrapper {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 1.75rem; margin-bottom: 2.5rem;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;
     }
     @media (max-width: 768px) {
       .cards-wrapper { grid-template-columns: 1fr; gap: 1.25rem; }
     }
     .action-card {
       background: var(--bg-card); border: 1px solid var(--border-card);
-      border-radius: var(--radius-card); padding: 2.25rem 2rem;
+      border-radius: var(--radius-card); padding: 2rem 1.85rem;
       display: flex; flex-direction: column;
       box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.5);
       transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
@@ -386,6 +315,26 @@
       color: #fff; font-weight: 700; font-size: 0.75rem; display: flex; align-items: center; justify-content: center;
     }
     .step-arrow { color: var(--text-dim); font-weight: 700; }
+    
+    /* Laptop Screen Optimization: Fits standard laptop heights (1366x768 to 1920x1080) with 0 vertical scroll */
+    @media (max-height: 820px) {
+      .main-view { padding: 0.85rem 1.25rem; }
+      .container { gap: 1rem; }
+      .action-card { padding: 1.35rem 1.45rem; }
+      .card-icon-circle { width: 40px; height: 40px; margin-bottom: 0.75rem; border-radius: 10px; }
+      .card-icon-circle svg { width: 22px; height: 22px; }
+      .card-headings h2 { font-size: 1.15rem; margin-bottom: 0.25rem; }
+      .card-headings p { font-size: 0.8rem; margin-bottom: 1rem; line-height: 1.35; }
+      .code-box { padding: 0.65rem 0.95rem; margin-bottom: 0.85rem; }
+      .code-number { font-size: 1.55rem; }
+      .btn-copy { padding: 0.45rem 0.8rem; font-size: 0.8rem; }
+      .code-input { padding: 0.75rem 0.85rem; font-size: 1.45rem; }
+      .btn-main-connect { padding: 0.8rem; font-size: 0.95rem; }
+      .connect-form { gap: 0.75rem; margin-bottom: 0.85rem; }
+      .recent-wrap { margin-top: 0.75rem; padding-top: 0.65rem; }
+      .simple-steps { padding: 0.65rem 1.25rem; font-size: 0.76rem; gap: 0.85rem; }
+      .step-num { width: 19px; height: 19px; font-size: 0.7rem; }
+    }
     
     /* Active Session View */
     .session-view {
@@ -663,12 +612,11 @@
 </head>
 <body>
   <script>
-    // Default to Sleek Dark Theme (AnyDesk Style); only use Light if user explicitly saved 'light'
+    // Sleek Dark Theme (AnyDesk Style)
     (function() {
       try {
-        if (localStorage.getItem('omnicast_theme') === 'light') {
-          document.body.classList.add('light-theme');
-        }
+        localStorage.removeItem('omnicast_theme');
+        document.body.classList.remove('light-theme');
       } catch(e) {}
     })();
   </script>
@@ -679,42 +627,18 @@
     <button id="btnDismissScheme" class="btn-scheme-help" type="button">Dismiss</button>
   </div>
 
-  <!-- Top Simple Header -->
+  <!-- Top Simple Header: Logo Only -->
   <header class="app-header">
     <div class="header-inner">
       <div class="brand">
-        <img src="logo.png" alt="OmniCast" class="brand-logo" onerror="this.style.display='none'">
-        <div>
-          <span class="brand-name">OmniCast</span>
-          <span class="brand-desc">AnyDesk-Style Web Screen Sharing & Control</span>
-        </div>
-      </div>
-      <div class="header-actions">
-        <!-- Modern Theme Toggle Switch -->
-        <button id="btnThemeToggle" class="theme-toggle-switch" type="button" role="switch" aria-checked="false" title="Switch Theme (Dark / Light)">
-          <span id="themeIcon" class="theme-switch-icon">🌙</span>
-          <span class="switch-pill">
-            <span class="switch-thumb"></span>
-          </span>
-          <span id="themeLabel" class="theme-switch-label">Dark Mode</span>
-        </button>
-        <div id="connectionStatus" class="status-badge status-online">
-          <span class="status-dot"></span>
-          <span id="statusLabel">Ready</span>
-        </div>
+        <img src="logo.png" alt="OmniCast" class="brand-logo">
       </div>
     </div>
   </header>
 
-  <!-- Main View: Dead Simple 2-Card Screen -->
+  <!-- Main View: Dead Simple 2-Card Screen (Laptop Optimized) -->
   <main id="mainView" class="main-view">
     <div class="container">
-      
-      <div class="welcome-text">
-        <div class="hero-tag">Direct WebRTC Remote Desktop</div>
-        <h1>Instant Remote Screen Streaming & Control</h1>
-        <p>Zero plugins required. Share your screen or connect to a remote partner with full mouse, keyboard, and laser support.</p>
-      </div>
 
       <div class="cards-wrapper">
         
@@ -752,30 +676,6 @@
                 }
                 var disp = document.getElementById('myCodeDisplay');
                 if (disp) disp.textContent = code.slice(0, 3) + ' ' + code.slice(3);
-                
-                // Initialize theme switch - Default to DARK
-                var savedTheme = localStorage.getItem('omnicast_theme');
-                var icon = document.getElementById('themeIcon');
-                var label = document.getElementById('themeLabel');
-                var btn = document.getElementById('btnThemeToggle');
-                var isLight = savedTheme === 'light';
-                if (isLight) {
-                  document.body.classList.add('light-theme');
-                  if (icon) icon.textContent = '☀️';
-                  if (label) label.textContent = 'Light Mode';
-                  if (btn) {
-                    btn.setAttribute('aria-checked', 'true');
-                    btn.title = 'Switch to Dark Theme';
-                  }
-                } else {
-                  document.body.classList.remove('light-theme');
-                  if (icon) icon.textContent = '🌙';
-                  if (label) label.textContent = 'Dark Mode';
-                  if (btn) {
-                    btn.setAttribute('aria-checked', 'false');
-                    btn.title = 'Switch to Light Theme';
-                  }
-                }
               } catch(e) {}
             })();
           </script>
