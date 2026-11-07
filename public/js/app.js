@@ -1159,10 +1159,9 @@
   // UI Event Bindings
   // =========================================================================
   function bindUI() {
-    // Enforce AnyDesk Dark Theme
+    // Enforce Clean Light Theme
     try {
-      localStorage.removeItem('omnicast_theme');
-      document.body.classList.remove('light-theme');
+      localStorage.setItem('omnicast_theme', 'light');
     } catch (e) {}
 
     // Dismiss file banner if present
