@@ -15,6 +15,7 @@ class NativeController {
     this.screenWidth = 1920;
     this.screenHeight = 1080;
     this.isReady = false;
+    this.queue = [];
     this.init();
   }
 
@@ -76,8 +77,8 @@ while($line = [Console]::ReadLine()) {
             [WinInputHelper]::SetCursorPos($x, $y)
         }
         "MOVE_PCT" {
-            $px = [double]$parts[1]
-            $py = [double]$parts[2]
+            $px = [double]::Parse($parts[1], [System.Globalization.CultureInfo]::InvariantCulture)
+            $py = [double]::Parse($parts[2], [System.Globalization.CultureInfo]::InvariantCulture)
             $x = [int]($px * $w)
             $y = [int]($py * $h)
             [WinInputHelper]::SetCursorPos($x, $y)
@@ -93,6 +94,16 @@ while($line = [Console]::ReadLine()) {
             if ($btn -eq 0) { [WinInputHelper]::mouse_event($MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero) }
             elseif ($btn -eq 2) { [WinInputHelper]::mouse_event($MOUSEEVENTF_RIGHTUP, 0, 0, 0, [UIntPtr]::Zero) }
             elseif ($btn -eq 1) { [WinInputHelper]::mouse_event($MOUSEEVENTF_MIDDLEUP, 0, 0, 0, [UIntPtr]::Zero) }
+        }
+        "DBLCLICK" {
+            $btn = [int]$parts[1]
+            if ($btn -eq 0) {
+                [WinInputHelper]::mouse_event($MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+                [WinInputHelper]::mouse_event($MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+                [System.Threading.Thread]::Sleep(40)
+                [WinInputHelper]::mouse_event($MOUSEEVENTF_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
+                [WinInputHelper]::mouse_event($MOUSEEVENTF_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+            }
         }
         "WHEEL" {
             $delta = [int]$parts[1]
@@ -152,6 +163,10 @@ while($line = [Console]::ReadLine()) {
           }
           this.isReady = true;
           console.log(`[NativeController] Windows Input Bridge Ready (${this.screenWidth}x${this.screenHeight})`);
+          while (this.queue.length > 0) {
+            const cmd = this.queue.shift();
+            try { this.process.stdin.write(cmd + '\n'); } catch (e) {}
+          }
         }
       });
 
@@ -170,12 +185,14 @@ while($line = [Console]::ReadLine()) {
   }
 
   execute(command) {
-    if (!this.isReady || !this.process || !this.process.stdin.writable) return;
+    if (!this.process || !this.process.stdin || !this.process.stdin.writable) return;
+    if (!this.isReady) {
+      if (this.queue.length < 80) this.queue.push(command);
+      return;
+    }
     try {
       this.process.stdin.write(command + '\n');
-    } catch (err) {
-      // ignore write error
-    }
+    } catch (err) {}
   }
 
   handleEvent(payload) {
@@ -192,11 +209,24 @@ while($line = [Console]::ReadLine()) {
         break;
 
       case 'mousedown':
+        if (payload.xPercent !== undefined && payload.yPercent !== undefined) {
+          this.execute(`MOVE_PCT ${payload.xPercent} ${payload.yPercent}`);
+        }
         this.execute(`MDOWN ${payload.button ?? 0}`);
         break;
 
       case 'mouseup':
+        if (payload.xPercent !== undefined && payload.yPercent !== undefined) {
+          this.execute(`MOVE_PCT ${payload.xPercent} ${payload.yPercent}`);
+        }
         this.execute(`MUP ${payload.button ?? 0}`);
+        break;
+
+      case 'dblclick':
+        if (payload.xPercent !== undefined && payload.yPercent !== undefined) {
+          this.execute(`MOVE_PCT ${payload.xPercent} ${payload.yPercent}`);
+        }
+        this.execute(`DBLCLICK ${payload.button ?? 0}`);
         break;
 
       case 'wheel':

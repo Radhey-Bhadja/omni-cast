@@ -742,10 +742,13 @@
           <script>
             (function() {
               try {
-                var code = localStorage.getItem('omnicast_my_code');
+                var code = sessionStorage.getItem('omnicast_my_code') || localStorage.getItem('omnicast_my_code');
                 if (!code || code.length !== 6) {
                   code = String(Math.floor(100000 + Math.random() * 900000));
-                  localStorage.setItem('omnicast_my_code', code);
+                  try {
+                    sessionStorage.setItem('omnicast_my_code', code);
+                    localStorage.setItem('omnicast_my_code', code);
+                  } catch(e) {}
                 }
                 var disp = document.getElementById('myCodeDisplay');
                 if (disp) disp.textContent = code.slice(0, 3) + ' ' + code.slice(3);

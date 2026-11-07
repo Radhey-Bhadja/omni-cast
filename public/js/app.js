@@ -33,7 +33,7 @@
           credential: 'openrelayproject'
         }
       ],
-      iceCandidatePoolSize: 10
+      iceCandidatePoolSize: 4
     },
     debug: 0
   };
@@ -50,14 +50,15 @@
   function getOrGenerateCode() {
     let saved = '';
     try {
-      saved = localStorage.getItem('omnicast_my_code');
+      saved = sessionStorage.getItem('omnicast_my_code') || localStorage.getItem('omnicast_my_code');
     } catch (e) {}
     if (!saved || saved.length !== 6 || !/^\d{6}$/.test(saved)) {
       saved = String(Math.floor(100000 + Math.random() * 900000));
-      try {
-        localStorage.setItem('omnicast_my_code', saved);
-      } catch (e) {}
     }
+    try {
+      sessionStorage.setItem('omnicast_my_code', saved);
+      localStorage.setItem('omnicast_my_code', saved);
+    } catch (e) {}
     return saved;
   }
 
@@ -251,28 +252,36 @@
   }
 
   // Local Host Input Server check (if running via server.js)
-  async function checkLocalInputServer() {
+  async function checkLocalInputServer(retries = 10) {
     try {
       const res = await fetch('/api/status', { method: 'GET' });
       if (res.ok) {
         const data = await res.json();
-        if (data && data.osControlAvailable) {
+        if (data && (data.osControlAvailable || data.status === 'online')) {
           state.hasServerApi = true;
-          console.log('[OmniCast] Native Windows OS Controller is READY!');
+          console.log('[OmniCast] Local Server Bridge Detected:', data);
+          return;
         }
       }
     } catch (e) {
-      state.hasServerApi = false;
+      // not on localhost / serverless
+    }
+    if (retries > 0) {
+      setTimeout(() => checkLocalInputServer(retries - 1), 1000);
     }
   }
 
   function relayToNativeHost(event) {
-    if (!state.isHost || !state.hasServerApi) return;
-    fetch('/api/host-input', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event })
-    }).catch(() => {});
+    if (!state.isHost) return;
+    if (window.location.protocol.startsWith('http')) {
+      fetch('/api/host-input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event })
+      }).then(() => {
+        state.hasServerApi = true;
+      }).catch(() => {});
+    }
   }
 
   // Recent Connections
@@ -403,7 +412,10 @@
         if (err.type === 'unavailable-id') {
           const fresh = String(Math.floor(100000 + Math.random() * 900000));
           state.myCode = fresh;
-          try { localStorage.setItem('omnicast_my_code', fresh); } catch (e) {}
+          try {
+            sessionStorage.setItem('omnicast_my_code', fresh);
+            localStorage.setItem('omnicast_my_code', fresh);
+          } catch (e) {}
           if (codeDisplay) codeDisplay.textContent = formatDisplay(fresh);
           initPeer();
         } else if (err.type === 'peer-unavailable') {
@@ -525,8 +537,17 @@
       // 6. Laser Pointer
       else if (data.type === 'laser') {
         laserPoint = { x: data.x, y: data.y, time: Date.now() };
+        if (state.isHost) {
+          const cursor = $('hostRemoteCursor');
+          if (cursor) {
+            cursor.classList.remove('hidden');
+            cursor.style.left = `${data.x * window.innerWidth}px`;
+            cursor.style.top = `${data.y * window.innerHeight}px`;
+          }
+        }
         if (data.click) {
           triggerLaserRipple(data.x, data.y);
+          if (state.isHost) showHostKeyHUD('🔴 Remote Laser Click');
           sound.play(750, 0.04);
         }
       }
@@ -676,7 +697,9 @@
     });
 
     conn.on('close', () => {
-      stopAllSessions('Connection closed.');
+      if (!isStopping && state.activeConn === conn) {
+        stopAllSessions('Partner disconnected.');
+      }
     });
   }
 
@@ -697,12 +720,12 @@
     }
 
     if (clean === state.myCode) {
-      showToast('Cannot connect to your own computer code!', 'warning');
+      showToast('Cannot connect to your own computer code! Open OmniCast on another device or tab.', 'warning');
       return;
     }
 
     if (!state.peer || !state.peer.open) {
-      showToast('Connecting to network, please wait a moment...', 'warning');
+      showToast('Connecting to network broker, please try again in a moment...', 'warning');
       initPeer();
       return;
     }
@@ -717,19 +740,32 @@
     if (btnText) btnText.textContent = 'Connecting...';
     if (spinner) spinner.classList.remove('hidden');
 
+    // Show Session Connecting Screen IMMEDIATELY
+    const mainView = $('mainView');
+    const sessionView = $('sessionView');
+    const loader = $('loaderOverlay');
+    const title = $('loaderTitle');
+    const sub = $('loaderSubtitle');
+    const partnerName = $('sessionPartnerName');
+
+    if (mainView) mainView.classList.add('hidden');
+    if (sessionView) sessionView.classList.remove('hidden');
+    if (loader) loader.classList.remove('hidden');
+    if (title) title.textContent = `Connecting to Desk ${formatDisplay(clean)}...`;
+    if (sub) sub.textContent = 'Establishing secure WebRTC peer connection...';
+    if (partnerName) partnerName.textContent = `Remote Screen (${formatDisplay(clean)})`;
+
     try {
       const conn = state.peer.connect('omni-' + clean, { reliable: true, serialization: 'json' });
       state.activeConn = conn;
       listenToDataChannel(conn);
 
       state.connectTimeoutTimer = setTimeout(() => {
-        const sessionView = $('sessionView');
-        const loader = $('loaderOverlay');
-        if (sessionView && !sessionView.classList.contains('hidden') && loader && !loader.classList.contains('hidden')) {
-          showToast('Connection timed out. Partner may be offline.', 'error');
-          resetConnectButton();
+        if (state.isConnecting && (!state.activeCall || !state.localStream)) {
+          showToast('Connection timed out. Partner may be offline or code is incorrect.', 'error');
+          stopAllSessions('Connection timed out.');
         }
-      }, 18000);
+      }, 20000);
 
       conn.on('open', () => {
         console.log('[Connected to Partner DataChannel] Asking permission...');
@@ -738,24 +774,19 @@
           fromCode: state.myCode
         });
 
-        const mainView = $('mainView');
-        const sessionView = $('sessionView');
-        const loader = $('loaderOverlay');
-        const title = $('loaderTitle');
-        const sub = $('loaderSubtitle');
-        const partnerName = $('sessionPartnerName');
+        if (title) title.textContent = `Connected to Desk (${formatDisplay(clean)})`;
+        if (sub) sub.textContent = 'Waiting for partner to click "Yes, Allow Control" on their screen...';
+      });
 
-        if (mainView) mainView.classList.add('hidden');
-        if (sessionView) sessionView.classList.remove('hidden');
-        if (loader) loader.classList.remove('hidden');
-        if (title) title.textContent = `Asking partner (${formatDisplay(clean)})...`;
-        if (sub) sub.textContent = 'Waiting for them to click "Allow" on their screen';
-        if (partnerName) partnerName.textContent = `Remote Screen (${formatDisplay(clean)})`;
+      conn.on('error', (err) => {
+        console.warn('[DataChannel Error]', err);
+        showToast('Connection error: ' + (err.message || err), 'error');
+        stopAllSessions('Connection error.');
       });
 
     } catch (e) {
-      showToast('Failed to connect: ' + e.message, 'error');
-      resetConnectButton();
+      showToast('Failed to initiate connection: ' + e.message, 'error');
+      stopAllSessions('Failed to connect.');
     }
   }
 
@@ -1016,9 +1047,18 @@
   // =========================================================================
   // Stop Session / Disconnect
   // =========================================================================
+  let isStoppingSession = false;
   function stopAllSessions(reason = 'Session ended.') {
+    if (isStoppingSession) return;
+    isStoppingSession = true;
+
     if (state.connectTimeoutTimer) clearTimeout(state.connectTimeoutTimer);
     stopPingHeartbeat();
+
+    state.isHost = false;
+    state.isConnecting = false;
+    state.isMouseDown = false;
+    state.targetCode = null;
 
     if (state.localStream) {
       state.localStream.getTracks().forEach((t) => t.stop());
@@ -1032,7 +1072,9 @@
 
     if (state.activeConn) {
       try {
-        state.activeConn.send({ type: 'end-session', reason });
+        if (state.activeConn.open) {
+          state.activeConn.send({ type: 'end-session', reason });
+        }
         state.activeConn.close();
       } catch (e) {}
       state.activeConn = null;
@@ -1074,6 +1116,10 @@
     resetConnectButton();
     sound.end();
     showToast(reason, 'info');
+
+    setTimeout(() => {
+      isStoppingSession = false;
+    }, 350);
   }
 
   // Safe Clipboard Copy with execCommand fallback
@@ -1166,6 +1212,7 @@
       const fresh = String(Math.floor(100000 + Math.random() * 900000));
       state.myCode = fresh;
       try {
+        sessionStorage.setItem('omnicast_my_code', fresh);
         localStorage.setItem('omnicast_my_code', fresh);
       } catch (e) {}
       const disp = $('myCodeDisplay');
