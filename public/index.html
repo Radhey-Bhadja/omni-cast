@@ -581,12 +581,11 @@
           <script>
             (function() {
               try {
-                var code = sessionStorage.getItem('omnicast_my_code') || localStorage.getItem('omnicast_my_code');
+                var code = sessionStorage.getItem('omnicast_my_code');
                 if (!code || code.length !== 6) {
                   code = String(Math.floor(100000 + Math.random() * 900000));
                   try {
                     sessionStorage.setItem('omnicast_my_code', code);
-                    localStorage.setItem('omnicast_my_code', code);
                   } catch(e) {}
                 }
                 var disp = document.getElementById('myCodeDisplay');
@@ -596,7 +595,7 @@
           </script>
 
           <div class="card-hint">
-            <span>Ready for incoming connections</span>
+            <span id="statusLabel">Ready for incoming connections</span>
             <button id="btnNewCode" class="link-btn" type="button">Get new number</button>
           </div>
         </div>

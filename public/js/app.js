@@ -46,18 +46,17 @@
     if (el) el.addEventListener(evt, fn, opts);
   };
 
-  // Immediate Code Generation
+  // Immediate Code Generation (Scoped per browser tab to allow flawless multi-tab testing)
   function getOrGenerateCode() {
     let saved = '';
     try {
-      saved = sessionStorage.getItem('omnicast_my_code') || localStorage.getItem('omnicast_my_code');
+      saved = sessionStorage.getItem('omnicast_my_code');
     } catch (e) {}
     if (!saved || saved.length !== 6 || !/^\d{6}$/.test(saved)) {
       saved = String(Math.floor(100000 + Math.random() * 900000));
     }
     try {
       sessionStorage.setItem('omnicast_my_code', saved);
-      localStorage.setItem('omnicast_my_code', saved);
     } catch (e) {}
     return saved;
   }
@@ -82,6 +81,7 @@
     activeConn: null, // RTCDataConnection
     activeCall: null, // MediaConnection
     localStream: null, // Host Screen MediaStream
+    remoteStream: null, // Viewer Remote MediaStream
     incomingFile: null,
     unreadChatCount: 0,
     isChatOpen: false,
@@ -375,7 +375,7 @@
 
     const statusLabel = $('statusLabel');
     const connectionStatus = $('connectionStatus');
-    if (statusLabel) statusLabel.textContent = 'Connecting...';
+    if (statusLabel) statusLabel.textContent = 'Connecting to network...';
     if (connectionStatus) connectionStatus.className = 'status-badge status-connecting';
 
     if (state.peer) {
@@ -394,7 +394,7 @@
 
       state.peer.on('open', (id) => {
         console.log('[OmniCast Peer Open]', id);
-        if (statusLabel) statusLabel.textContent = 'Ready (Online)';
+        if (statusLabel) statusLabel.textContent = 'Ready for incoming connections';
         if (connectionStatus) connectionStatus.className = 'status-badge status-online';
       });
 
@@ -414,13 +414,13 @@
           state.myCode = fresh;
           try {
             sessionStorage.setItem('omnicast_my_code', fresh);
-            localStorage.setItem('omnicast_my_code', fresh);
           } catch (e) {}
           if (codeDisplay) codeDisplay.textContent = formatDisplay(fresh);
           initPeer();
         } else if (err.type === 'peer-unavailable') {
           showToast('That Desk Code is currently offline. Ensure partner has OmniCast open!', 'error');
           resetConnectButton();
+          if (statusLabel) statusLabel.textContent = 'Ready for incoming connections';
         } else if (err.type === 'network' || err.type === 'server-error') {
           if (statusLabel) statusLabel.textContent = 'Reconnecting...';
           if (connectionStatus) connectionStatus.className = 'status-badge status-connecting';
@@ -448,6 +448,13 @@
 
         call.on('stream', (stream) => {
           console.log('[Stream Received on Viewer]', stream.id);
+          state.remoteStream = stream;
+          state.isConnecting = false;
+          if (state.connectTimeoutTimer) {
+            clearTimeout(state.connectTimeoutTimer);
+            state.connectTimeoutTimer = null;
+          }
+
           const video = $('remoteVideo');
           if (video) {
             video.srcObject = stream;
@@ -725,6 +732,22 @@
     }
 
     if (!state.peer || !state.peer.open) {
+      if (state.peer && !state.peer.destroyed) {
+        showToast('Connecting to network broker, please wait a moment...', 'info');
+        let attempts = 0;
+        const checkInterval = setInterval(() => {
+          attempts++;
+          if (state.peer && state.peer.open) {
+            clearInterval(checkInterval);
+            startConnect();
+          } else if (attempts >= 10) {
+            clearInterval(checkInterval);
+            showToast('Broker taking longer than usual. Please retry in a few seconds.', 'warning');
+            resetConnectButton();
+          }
+        }, 300);
+        return;
+      }
       showToast('Connecting to network broker, please try again in a moment...', 'warning');
       initPeer();
       return;
@@ -761,11 +784,11 @@
       listenToDataChannel(conn);
 
       state.connectTimeoutTimer = setTimeout(() => {
-        if (state.isConnecting && (!state.activeCall || !state.localStream)) {
+        if (state.isConnecting && !state.remoteStream && !state.localStream) {
           showToast('Connection timed out. Partner may be offline or code is incorrect.', 'error');
           stopAllSessions('Connection timed out.');
         }
-      }, 20000);
+      }, 25000);
 
       conn.on('open', () => {
         console.log('[Connected to Partner DataChannel] Asking permission...');
@@ -792,7 +815,14 @@
 
   function resetConnectButton() {
     state.isConnecting = false;
-    if (state.connectTimeoutTimer) clearTimeout(state.connectTimeoutTimer);
+    if (state.connectTimeoutTimer) {
+      clearTimeout(state.connectTimeoutTimer);
+      state.connectTimeoutTimer = null;
+    }
+    if (state.activeConn && !state.remoteStream && !state.localStream) {
+      try { state.activeConn.close(); } catch(e) {}
+      state.activeConn = null;
+    }
     const btnConnect = $('btnConnect');
     const btnText = $('connectBtnText');
     const spinner = $('connectSpinner');
@@ -1065,6 +1095,13 @@
       state.localStream = null;
     }
 
+    if (state.remoteStream) {
+      try {
+        state.remoteStream.getTracks().forEach((t) => t.stop());
+      } catch (e) {}
+      state.remoteStream = null;
+    }
+
     if (state.activeCall) {
       try { state.activeCall.close(); } catch (e) {}
       state.activeCall = null;
@@ -1193,7 +1230,6 @@
       state.myCode = fresh;
       try {
         sessionStorage.setItem('omnicast_my_code', fresh);
-        localStorage.setItem('omnicast_my_code', fresh);
       } catch (e) {}
       const disp = $('myCodeDisplay');
       if (disp) disp.textContent = formatDisplay(fresh);
