@@ -71,21 +71,44 @@
       border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.75rem; color: #78350f; cursor: pointer;
     }
 
-    /* Top Simple Header: Clean Centered Logo */
+    /* Top Header: Brand Logo & Wordmark Aligned at Top-Left Corner */
     .app-header {
       background: #ffffff;
       border-bottom: 1px solid var(--border-card);
       position: sticky; top: 0; z-index: 50;
     }
     .header-inner {
-      height: 56px;
-      display: flex; align-items: center; justify-content: center;
-      padding: 0 1.5rem;
+      height: 60px;
+      padding: 0 2rem;
+      display: flex; align-items: center; justify-content: flex-start;
+      max-width: 1200px; margin: 0 auto;
+    }
+    @media (max-width: 768px) {
+      .header-inner { padding: 0 1.25rem; }
+    }
+    .brand {
+      display: inline-flex; align-items: center; gap: 0.85rem;
+      text-decoration: none; user-select: none;
     }
     .brand-logo {
-      height: 38px; width: 38px;
-      border-radius: 9px; object-fit: contain;
+      height: 42px; width: 42px;
+      object-fit: contain;
       display: block;
+    }
+    .brand-text {
+      display: flex; flex-direction: column; justify-content: center;
+      line-height: 1.15;
+    }
+    .brand-name {
+      font-size: 1.35rem; font-weight: 800; letter-spacing: -0.03em;
+      color: #0f172a; display: flex; align-items: center;
+    }
+    .brand-accent {
+      color: var(--accent-blue);
+    }
+    .brand-tag {
+      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #64748b; margin-top: 1px;
     }
 
     /* Main View: Clean 2-Card Screen */
@@ -513,10 +536,16 @@
     <button id="btnDismissScheme" class="btn-scheme-help" type="button">Dismiss</button>
   </div>
 
-  <!-- Top Simple Header: Clean Centered Logo -->
+  <!-- Top Header: Logo Icon & OmniCast Wordmark at Top-Left Corner -->
   <header class="app-header">
     <div class="header-inner">
-      <img src="logo.png" alt="OmniCast" class="brand-logo">
+      <div class="brand">
+        <img src="logo.png" alt="OmniCast" class="brand-logo">
+        <div class="brand-text">
+          <span class="brand-name">Omni<span class="brand-accent">Cast</span></span>
+          <span class="brand-tag">Web-Based Remote Access</span>
+        </div>
+      </div>
     </div>
   </header>
 
