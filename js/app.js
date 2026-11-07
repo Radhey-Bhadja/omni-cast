@@ -91,7 +91,8 @@
     lastMouseMoveTime: 0,
     hasServerApi: false,
     reconnectTimer: null,
-    isMouseDown: false
+    isMouseDown: false,
+    isConnecting: false
   };
 
   // Sound Engine (Web Audio API)
@@ -174,14 +175,40 @@
     animFrameId = requestAnimationFrame(loop);
   }
 
+  function getVideoRenderMetrics() {
+    const video = $('remoteVideo');
+    if (!video) return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+    const rect = video.getBoundingClientRect();
+    if (video.classList.contains('fit-stretch') || !video.videoWidth || !video.videoHeight) {
+      return { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
+    }
+    const videoAspect = video.videoWidth / video.videoHeight;
+    const containerAspect = rect.width / rect.height;
+    let w, h, x, y;
+    if (containerAspect > videoAspect) {
+      h = rect.height;
+      w = h * videoAspect;
+      x = rect.left + (rect.width - w) / 2;
+      y = rect.top;
+    } else {
+      w = rect.width;
+      h = w / videoAspect;
+      x = rect.left;
+      y = rect.top + (rect.height - h) / 2;
+    }
+    return { x, y, w, h };
+  }
+
   function renderLaser() {
     const canvas = $('laserCanvas');
     if (!laserCtx || !canvas) return;
     laserCtx.clearRect(0, 0, canvas.width, canvas.height);
 
+    const m = getVideoRenderMetrics();
+
     if (laserPoint && (Date.now() - laserPoint.time < 1200)) {
-      const x = laserPoint.x * canvas.width;
-      const y = laserPoint.y * canvas.height;
+      const x = m.x + (laserPoint.x * m.w);
+      const y = m.y + (laserPoint.y * m.h);
 
       const radGrad = laserCtx.createRadialGradient(x, y, 0, x, y, 22);
       radGrad.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
@@ -208,8 +235,8 @@
       }
       const radius = 6 + progress * 32;
       const alpha = (1 - progress) * 0.8;
-      const x = r.x * canvas.width;
-      const y = r.y * canvas.height;
+      const x = m.x + (r.x * m.w);
+      const y = m.y + (r.y * m.h);
 
       laserCtx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
       laserCtx.lineWidth = 2.5 * (1 - progress);
@@ -658,6 +685,8 @@
   // =========================================================================
   function startConnect(e) {
     if (e) e.preventDefault();
+    if (state.isConnecting) return;
+
     const input = $('targetCodeInput');
     const clean = cleanDigits(input ? input.value : '');
 
@@ -678,6 +707,7 @@
       return;
     }
 
+    state.isConnecting = true;
     state.targetCode = clean;
 
     const btnConnect = $('btnConnect');
@@ -730,6 +760,7 @@
   }
 
   function resetConnectButton() {
+    state.isConnecting = false;
     if (state.connectTimeoutTimer) clearTimeout(state.connectTimeoutTimer);
     const btnConnect = $('btnConnect');
     const btnText = $('connectBtnText');
@@ -764,12 +795,18 @@
           audio: true
         });
       } catch (e1) {
+        if (e1.name === 'NotAllowedError' || e1.name === 'AbortError') {
+          throw e1;
+        }
         try {
           stream = await navigator.mediaDevices.getDisplayMedia({
             video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
             audio: false
           });
         } catch (e2) {
+          if (e2.name === 'NotAllowedError' || e2.name === 'AbortError') {
+            throw e2;
+          }
           stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         }
       }
@@ -1039,23 +1076,66 @@
     showToast(reason, 'info');
   }
 
+  // Safe Clipboard Copy with execCommand fallback
+  function copyTextToClipboard(text, successCb, failCb) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text)
+        .then(() => { if (successCb) successCb(); })
+        .catch(() => { fallbackCopyText(text, successCb, failCb); });
+    } else {
+      fallbackCopyText(text, successCb, failCb);
+    }
+  }
+
+  function fallbackCopyText(text, successCb, failCb) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      ta.setAttribute('readonly', '');
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) {
+        if (successCb) successCb();
+      } else {
+        if (failCb) failCb();
+      }
+    } catch (e) {
+      if (failCb) failCb(e);
+    }
+  }
+
+  function updateThemeUI(isLight) {
+    const icon = $('themeIcon');
+    const label = $('themeLabel');
+    const btn = $('btnThemeToggle');
+    if (icon) icon.textContent = isLight ? '☀️' : '🌙';
+    if (label) label.textContent = isLight ? 'Light Mode' : 'Dark Mode';
+    if (btn) {
+      btn.setAttribute('aria-checked', isLight ? 'true' : 'false');
+      btn.title = isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme';
+    }
+  }
+
   // =========================================================================
   // UI Event Bindings
   // =========================================================================
   function bindUI() {
-    // Theme Toggle Handler (Defaults to Light Theme)
+    // Theme Toggle Switch (Defaults to Dark AnyDesk Theme)
     const currentIsLight = document.body.classList.contains('light-theme');
-    const themeIconEl = $('themeIcon');
-    if (themeIconEl) themeIconEl.textContent = currentIsLight ? '🌙' : '☀️';
+    updateThemeUI(currentIsLight);
 
     on($('btnThemeToggle'), 'click', () => {
       const isLight = document.body.classList.toggle('light-theme');
-      const icon = $('themeIcon');
-      if (icon) icon.textContent = isLight ? '🌙' : '☀️';
+      updateThemeUI(isLight);
       try {
         localStorage.setItem('omnicast_theme', isLight ? 'light' : 'dark');
       } catch (e) {}
-      showToast(isLight ? 'Light Theme Enabled' : 'Dark Theme Enabled', 'info');
+      showToast(isLight ? '☀️ Light Theme Enabled' : '🌙 Dark Theme Enabled', 'info');
     });
 
     // Dismiss file banner if present
@@ -1066,7 +1146,7 @@
 
     // Copy Code Button
     on($('btnCopyCode'), 'click', () => {
-      navigator.clipboard.writeText(state.myCode).then(() => {
+      copyTextToClipboard(state.myCode, () => {
         const btn = $('btnCopyCode');
         const text = $('copyBtnText');
         if (btn) btn.classList.add('copied');
@@ -1076,6 +1156,8 @@
           if (btn) btn.classList.remove('copied');
           if (text) text.textContent = 'Copy Code';
         }, 2000);
+      }, () => {
+        showToast(`Your Desk Code: ${formatDisplay(state.myCode)}`, 'info');
       });
     });
 
@@ -1106,9 +1188,8 @@
       if (input) input.value = formatDisplay(clean);
     });
 
-    // Connect Form Submit & Button Click Fallback
+    // Connect Form Submit
     on($('connectForm'), 'submit', startConnect);
-    on($('btnConnect'), 'click', startConnect);
     on($('btnCancelConnect'), 'click', () => stopAllSessions('Cancelled connection.'));
 
     // Host Incoming Modal Buttons

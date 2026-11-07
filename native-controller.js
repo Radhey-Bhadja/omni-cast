@@ -50,6 +50,7 @@ Add-Type -TypeDefinition $source
 
 $w = [WinInputHelper]::GetSystemMetrics(0)
 $h = [WinInputHelper]::GetSystemMetrics(1)
+Add-Type -AssemblyName System.Windows.Forms
 Write-Output "READY:$w,$h"
 
 $MOUSEEVENTF_LEFTDOWN   = 0x0002
@@ -123,6 +124,12 @@ while($line = [Console]::ReadLine()) {
                 [WinInputHelper]::keybd_event(0x09, 0, 0, [UIntPtr]::Zero) # Tab
                 [WinInputHelper]::keybd_event(0x09, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
                 [WinInputHelper]::keybd_event(0x12, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
+            }
+        }
+        "TYPE_STR" {
+            $raw = $parts[1..($parts.Length - 1)] -join ' '
+            if (-not [string]::IsNullOrEmpty($raw)) {
+                [System.Windows.Forms.SendKeys]::SendWait($raw)
             }
         }
     }
@@ -219,11 +226,8 @@ while($line = [Console]::ReadLine()) {
       case 'type-string':
       case 'text':
         if (payload.text && typeof payload.text === 'string') {
-          for (let i = 0; i < payload.text.length; i++) {
-            const code = payload.text.charCodeAt(i) & 0xFF;
-            this.execute(`KDOWN ${code}`);
-            this.execute(`KUP ${code}`);
-          }
+          const escaped = payload.text.replace(/([+^%~{}()[\]])/g, '{$1}');
+          this.execute(`TYPE_STR ${escaped}`);
         }
         break;
     }
