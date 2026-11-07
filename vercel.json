@@ -17,9 +17,9 @@
       ]
     },
     {
-      "source": "/logo.png",
+      "source": "/(.*)\\.(png|jpg|jpeg|gif|svg|ico)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
     }
   ]
