@@ -1,14 +1,13 @@
 /**
  * OmniCast DataChannel Protocol Handler
  * Complete TypeScript type definitions and packet serializer / deserializer
- * for Ultra-Low Latency WebRTC Remote Desktop Control, Chat, and 16KB File Transfer.
+ * for Ultra-Low Latency WebRTC Remote Desktop Control, Chat, and Shared Clipboard.
  */
 
 export const DATA_CHANNEL_CONFIG = {
   label: 'omnicast-control',
   ordered: true,
-  maxRetransmits: 3,
-  chunkSize: 16 * 1024 // 16KB per file transfer packet
+  maxRetransmits: 3
 };
 
 // ============================================================================
@@ -95,28 +94,6 @@ export interface ChatMessage {
   from?: string;
 }
 
-export interface FileStartMessage {
-  type: 'file-start';
-  id: string;
-  name: string;
-  size: number;
-  mimeType: string;
-  totalChunks: number;
-}
-
-export interface FileChunkMessage {
-  type: 'file-chunk';
-  id: string;
-  chunkIndex: number;
-  totalChunks: number;
-  data: string; // Base64 data URL
-}
-
-export interface FileEndMessage {
-  type: 'file-end';
-  id: string;
-}
-
 export interface ClipboardPushMessage {
   type: 'clipboard-push';
   text: string;
@@ -134,7 +111,6 @@ export interface ClipboardPullRespMessage {
 export interface SessionPermissions {
   allowAudio: boolean;
   allowPointer: boolean;
-  allowFiles: boolean;
   allowClipboard: boolean;
   nativeOsControl?: boolean;
 }
@@ -176,9 +152,6 @@ export type DataChannelPacket =
   | SpecialKeyMessage
   | TextInputMessage
   | ChatMessage
-  | FileStartMessage
-  | FileChunkMessage
-  | FileEndMessage
   | ClipboardPushMessage
   | ClipboardPullReqMessage
   | ClipboardPullRespMessage

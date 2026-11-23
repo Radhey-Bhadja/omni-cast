@@ -207,17 +207,6 @@
 
           <div class="perm-item">
             <div class="perm-info">
-              <span class="perm-label">P2P File Transfer</span>
-              <span class="perm-desc">Bidirectional 16KB chunking</span>
-            </div>
-            <label class="switch">
-              <input type="checkbox" id="permFiles" checked>
-              <span class="slider"></span>
-            </label>
-          </div>
-
-          <div class="perm-item">
-            <div class="perm-info">
               <span class="perm-label">Clipboard Sync</span>
               <span class="perm-desc">Bidirectional push/pull clipboard</span>
             </div>
@@ -375,12 +364,6 @@
       <video id="remoteVideo" autoplay playsinline muted class="remote-video control-active"></video>
       <canvas id="laserCanvas" class="laser-canvas"></canvas>
 
-      <!-- Drag & Drop File Overlay -->
-      <div id="dropZoneOverlay" class="drop-zone-overlay hidden">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-        <span>Drop file to stream to remote computer (16KB chunks)</span>
-      </div>
-
       <!-- Connecting Overlay -->
       <div id="loaderOverlay" class="loader-overlay">
         <div class="loader-circle"></div>
@@ -393,7 +376,7 @@
   </div>
 
   <!-- ==========================================================================
-       COLLAPSIBLE SIDE DRAWER (Chat, 16KB P2P File Transfer, Shared Clipboard)
+       COLLAPSIBLE SIDE DRAWER (Chat & Shared Clipboard)
        ========================================================================== -->
   <aside id="sideDrawer" class="side-drawer drawer-closed">
     <div class="drawer-header">
@@ -404,15 +387,11 @@
       <button id="btnCloseDrawer" class="btn-close-drawer" type="button" title="Close Tools Drawer">✕</button>
     </div>
 
-    <!-- 3 Tabs Navigation -->
+    <!-- 2 Tabs Navigation: Chat & Clipboard -->
     <div class="drawer-tabs">
       <button id="tabBtnChat" class="drawer-tab active" type="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
         <span>Chat</span>
-      </button>
-      <button id="tabBtnFiles" class="drawer-tab" type="button">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-        <span>Files</span>
       </button>
       <button id="tabBtnClipboard" class="drawer-tab" type="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
@@ -433,25 +412,7 @@
         </form>
       </div>
 
-      <!-- TAB 2: File Transfer (16KB Chunks) -->
-      <div id="tabPaneFiles" class="drawer-tab-pane hidden">
-        <input type="file" id="filePickerInput" class="hidden">
-        
-        <div id="dropzoneBox" class="dropzone-box" title="Click or Drag Files Here">
-          <div class="dropzone-icon">
-            <svg class="mx-auto" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-          </div>
-          <div class="dropzone-text">Click or Drag & Drop File</div>
-          <div class="dropzone-sub">Chunks over RTCDataChannel in 16KB blocks</div>
-        </div>
-
-        <div class="text-xs font-bold uppercase text-slate-500 tracking-wider mb-2">Transfer Progress</div>
-        <div id="transfersList" class="transfers-list">
-          <div class="text-xs text-slate-500 text-center py-4">No active file transfers</div>
-        </div>
-      </div>
-
-      <!-- TAB 3: Shared Clipboard -->
+      <!-- TAB 2: Shared Clipboard -->
       <div id="tabPaneClipboard" class="drawer-tab-pane hidden">
         <div class="clipboard-wrap">
           <p class="text-xs text-slate-400">Synchronize text snippets directly between host and viewer over the encrypted RTCDataChannel.</p>
@@ -510,9 +471,13 @@
         </div>
         <div class="peer-detail-row">
           <span class="peer-detail-label">Permissions:</span>
-          <span id="incomingPerms" class="text-xs text-emerald-400 font-semibold">Audio, Pointer, Files, Clipboard</span>
+          <span id="incomingPerms" class="text-xs text-emerald-400 font-semibold">Audio, Remote Pointer, Clipboard</span>
         </div>
       </div>
+
+      <p class="text-xs text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5 mb-4 text-left">
+        💡 <b>Tip:</b> Choose <b>Entire Screen</b> when Chrome prompts you so your desktop streams smoothly without background tab occlusion.
+      </p>
 
       <!-- 30-Second Countdown Bar -->
       <div class="countdown-wrapper">

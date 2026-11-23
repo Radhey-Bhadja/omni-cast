@@ -1,7 +1,7 @@
 /**
  * OmniCast — Production React/Next.js WebRTC Remote Desktop Hook
  * Manages RTCPeerConnection lifecycle, RTCDataChannel multiplexing,
- * displayMedia screen capture, live WebRTC stats polling, 16KB file transfer,
+ * displayMedia screen capture, live WebRTC stats polling,
  * and shared clipboard synchronization.
  */
 
@@ -57,7 +57,6 @@ export function useWebRTC(options: UseWebRTCOptions = {}) {
   const [permissions, setPermissions] = useState<SessionPermissions>({
     allowAudio: true,
     allowPointer: true,
-    allowFiles: true,
     allowClipboard: true,
     nativeOsControl: true
   });
@@ -150,6 +149,7 @@ export function useWebRTC(options: UseWebRTCOptions = {}) {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           cursor: 'always',
+          displaySurface: 'monitor',
           frameRate: { ideal: 60, max: 60 },
           width: { ideal: 1920 },
           height: { ideal: 1080 }
@@ -157,8 +157,7 @@ export function useWebRTC(options: UseWebRTCOptions = {}) {
         audio: permissions.allowAudio,
         // @ts-ignore
         selfBrowserSurface: 'exclude',
-        surfaceSwitching: 'include',
-        systemAudio: 'include'
+        surfaceSwitching: 'include'
       });
 
       setLocalStream(stream);

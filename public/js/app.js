@@ -1,7 +1,7 @@
 /**
  * OmniCast — Ultra-Low Latency WebRTC Remote Desktop (AnyDesk Grade)
- * Full Mouse, Keyboard, Laser, Live WebRTC Stats, 16KB File Transfer,
- * Shared Clipboard, MediaRecorder Screen Recording, and Host OS Bridge.
+ * Full Mouse, Keyboard, Laser, Live WebRTC Stats, Shared Clipboard,
+ * MediaRecorder Screen Recording, and Native Host OS Input Bridge.
  */
 
 (() => {
@@ -37,9 +37,6 @@
     },
     debug: 0
   };
-
-  // 16KB chunk size for ultra-smooth DataChannel packet delivery
-  const FILE_CHUNK_SIZE = 16 * 1024;
 
   // DOM Helpers
   const $ = (id) => document.getElementById(id);
@@ -103,11 +100,10 @@
     pendingClientInfo: null,
     pendingPermissions: null,
 
-    // Permissions
+    // Permissions (File section removed per user specification)
     permissions: {
       allowAudio: true,
       allowPointer: true,
-      allowFiles: true,
       allowClipboard: true,
       nativeOsControl: true
     },
@@ -124,12 +120,12 @@
     recordingTimer: null,
     recordingSeconds: 0,
 
-    // File Transfer State (Receiving)
-    incomingTransfers: new Map(), // transferId -> { name, size, totalChunks, receivedChunks, chunks: [] }
-    activeUploads: new Map(),
-
     // Shared Clipboard
-    sharedClipboardText: ''
+    sharedClipboardText: '',
+
+    // Laser position
+    laserX: -1,
+    laserY: -1
   };
 
   // =========================================================================
@@ -200,10 +196,10 @@
 
   function resizeLaserCanvas() {
     const canvas = $('laserCanvas');
-    const video = $('remoteVideo');
-    if (!canvas || !video) return;
-    canvas.width = canvas.parentElement.clientWidth;
-    canvas.height = canvas.parentElement.clientHeight;
+    const container = $('videoContainer');
+    if (!canvas || !container) return;
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
   }
 
   function addClickRipple(x, y, color = '#ef4444') {
@@ -229,12 +225,31 @@
         r.alpha -= 0.04;
         if (r.alpha <= 0) ripples.splice(i, 1);
       }
+
+      // Render laser dot when active in laser mode
+      if (state.mode === 'laser' && state.laserX >= 0 && state.laserY >= 0) {
+        const rad = 7;
+        const grad = laserCtx.createRadialGradient(state.laserX, state.laserY, 1, state.laserX, state.laserY, rad * 2.5);
+        grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+        grad.addColorStop(0.3, 'rgba(239, 68, 68, 0.9)');
+        grad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+
+        laserCtx.beginPath();
+        laserCtx.arc(state.laserX, state.laserY, rad * 2.5, 0, Math.PI * 2);
+        laserCtx.fillStyle = grad;
+        laserCtx.fill();
+
+        laserCtx.beginPath();
+        laserCtx.arc(state.laserX, state.laserY, rad, 0, Math.PI * 2);
+        laserCtx.fillStyle = '#ef4444';
+        laserCtx.fill();
+      }
     }
     requestAnimationFrame(renderLaserLoop);
   }
 
   // =========================================================================
-  // Background Audio KeepAlive (Prevents Browser Occlusion Freezing)
+  // Background Audio & Render KeepAlive (Prevents Tab Freezing on Host)
   // =========================================================================
   let backgroundAudioKeepAlive = null;
   function startBackgroundAudioKeepAlive() {
@@ -245,7 +260,7 @@
       const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      gain.gain.value = 0.0001; // Inaudible
+      gain.gain.value = 0.0001; // Inaudible keepalive tone
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
@@ -316,7 +331,6 @@
       `;
     }).join('');
 
-    // Attach click listeners to fast reconnect buttons
     listEl.querySelectorAll('.btn-quick-connect').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const code = e.currentTarget.getAttribute('data-code');
@@ -336,6 +350,96 @@
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
+  }
+
+  // =========================================================================
+  // Bulletproof Remote Video Attachment & Autoplay Unlock
+  // =========================================================================
+  function attachRemoteStream(stream) {
+    if (!stream) {
+      console.warn('[OmniCast] attachRemoteStream received falsy stream');
+      return;
+    }
+
+    console.log('[OmniCast] Attaching Remote Stream:', stream.id, 'Tracks:', stream.getTracks().map(t => `${t.kind}:${t.enabled}`).join(', '));
+    state.remoteStream = stream;
+
+    const video = $('remoteVideo');
+    if (!video) return;
+
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
+    }
+
+    video.defaultMuted = true;
+    video.muted = true; // Crucial for instant browser autoplay compliance
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('autoplay', '');
+
+    const forcePlayVideo = () => {
+      if (!video.srcObject) return;
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          console.log('[OmniCast Video Play Success] Resolution:', video.videoWidth, 'x', video.videoHeight);
+          hideConnectingLoader();
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            updateResolutionStat(video.videoWidth, video.videoHeight);
+          }
+        }).catch(err => {
+          console.warn('[OmniCast Autoplay paused, waiting for gesture]', err.message);
+          const unlock = () => {
+            video.play().then(() => hideConnectingLoader()).catch(() => {});
+            window.removeEventListener('click', unlock);
+            window.removeEventListener('keydown', unlock);
+            window.removeEventListener('touchstart', unlock);
+          };
+          window.addEventListener('click', unlock);
+          window.addEventListener('keydown', unlock);
+          window.addEventListener('touchstart', unlock);
+        });
+      }
+    };
+
+    video.onloadedmetadata = () => {
+      console.log('[Video LoadedMetadata]', video.videoWidth, 'x', video.videoHeight);
+      forcePlayVideo();
+    };
+
+    video.oncanplay = () => {
+      forcePlayVideo();
+    };
+
+    stream.getVideoTracks().forEach(track => {
+      track.enabled = true;
+      track.onunmute = () => {
+        console.log('[Remote Video Track Unmuted]');
+        forcePlayVideo();
+      };
+      track.onmute = () => {
+        console.warn('[Remote Video Track Muted]');
+      };
+    });
+
+    stream.onaddtrack = (e) => {
+      console.log('[Stream onaddtrack]', e.track.kind);
+      if (e.track.kind === 'video') {
+        e.track.enabled = true;
+        e.track.onunmute = () => forcePlayVideo();
+      }
+      if (video.srcObject !== stream) video.srcObject = stream;
+      forcePlayVideo();
+    };
+
+    // Immediate playback kick-off
+    forcePlayVideo();
+
+    hideConnectingLoader();
+    sound.success();
+    showToast('Connected! Live screen active.', 'success');
+    startStatsPolling();
+    if (state.targetCode) saveRecentSession(state.targetCode);
   }
 
   // =========================================================================
@@ -362,7 +466,6 @@
       state.peer.on('error', (err) => {
         console.warn('[OmniCast Peer Error]', err.type, err.message);
         if (err.type === 'unavailable-id') {
-          // If code collision occurs, regenerate new 9-digit code
           state.myCode = String(Math.floor(100000000 + Math.random() * 900000000));
           sessionStorage.setItem('omnicast_my_code', state.myCode);
           updateCodeDisplay();
@@ -382,78 +485,39 @@
         listenToDataChannel(conn);
       });
 
-      // INCOMING MEDIA CALL (Viewer answers host stream)
+      // INCOMING MEDIA CALL (Viewer receives host screen stream)
       state.peer.on('call', (call) => {
-        console.log('[OmniCast Incoming MediaCall]', call.peer);
+        console.log('[OmniCast Incoming MediaCall from Host]', call.peer);
         state.activeCall = call;
 
-        const attachRemoteStream = (stream) => {
-          console.log('[OmniCast Remote Stream Received]', stream.id);
-          state.remoteStream = stream;
-          const video = $('remoteVideo');
-          if (video) {
-            video.srcObject = stream;
-            video.muted = true; // Required for reliable autoplay policy
-            
-            const playVideo = () => {
-              video.play().then(() => {
-                console.log('[OmniCast Video Play Success]');
-              }).catch(err => {
-                console.warn('[Video Play Autoplay Blocked, waiting for user gesture]', err);
-                const unlock = () => {
-                  video.play();
-                  window.removeEventListener('click', unlock);
-                  window.removeEventListener('keydown', unlock);
-                };
-                window.addEventListener('click', unlock);
-                window.addEventListener('keydown', unlock);
-              });
-            };
+        // 1. Answer immediately
+        call.answer();
 
-            video.onloadedmetadata = () => {
-              console.log('[Video Metadata]', video.videoWidth, 'x', video.videoHeight);
-              playVideo();
-              updateResolutionStat(video.videoWidth, video.videoHeight);
-            };
-            video.oncanplay = () => playVideo();
-
-            stream.getVideoTracks().forEach(track => {
-              track.enabled = true;
-              track.onunmute = () => playVideo();
-            });
-
-            stream.onaddtrack = (e) => {
-              if (e.track.kind === 'video') {
-                e.track.enabled = true;
-                e.track.onunmute = () => playVideo();
-              }
-              if (video.srcObject !== stream) video.srcObject = stream;
-              playVideo();
-            };
-          }
-
-          hideConnectingLoader();
-          const videoContainer = $('videoContainer');
-          if (videoContainer) videoContainer.focus();
-
-          sound.success();
-          showToast('Connected! Live screen view active.', 'success');
-          startStatsPolling();
-          if (state.targetCode) saveRecentSession(state.targetCode);
-        };
-
+        // 2. Attach listener to stream event
         call.on('stream', (stream) => {
+          console.log('[MediaConnection stream event received]', stream);
           attachRemoteStream(stream);
         });
 
-        if (call.peerConnection) {
-          call.peerConnection.ontrack = (event) => {
-            const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
-            attachRemoteStream(stream);
-          };
+        // 3. If stream is already populated on call object
+        if (call.remoteStream) {
+          attachRemoteStream(call.remoteStream);
         }
 
-        call.answer(); // Viewer answers the call
+        // 4. Hook into underlying RTCPeerConnection ontrack event directly
+        const hookPCTracks = () => {
+          if (call.peerConnection && !call.peerConnection._tracksHooked) {
+            call.peerConnection._tracksHooked = true;
+            call.peerConnection.addEventListener('track', (event) => {
+              console.log('[Direct RTCPeerConnection track event]', event.track.kind);
+              const s = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+              attachRemoteStream(s);
+            });
+          }
+        };
+        hookPCTracks();
+        setTimeout(hookPCTracks, 50);
+        setTimeout(hookPCTracks, 200);
 
         call.on('close', () => {
           stopAllSessions('Partner closed remote desktop.');
@@ -499,7 +563,7 @@
         if (data.permissions) {
           state.permissions = { ...state.permissions, ...data.permissions };
         }
-        showToast('Host approved connection! Establishing stream...', 'success');
+        showToast('Host approved! Establishing live screen stream...', 'success');
       }
 
       // 3. Host declined connection request
@@ -573,16 +637,7 @@
         }
       }
 
-      // 13. P2P File Transfer Protocol (16KB Chunks)
-      else if (data.type === 'file-start') {
-        handleFileStart(data);
-      } else if (data.type === 'file-chunk') {
-        handleFileChunk(data);
-      } else if (data.type === 'file-end') {
-        handleFileEnd(data);
-      }
-
-      // 14. Shared Clipboard Sync
+      // 13. Shared Clipboard Sync
       else if (data.type === 'clipboard-push') {
         handleClipboardPush(data.text);
       } else if (data.type === 'clipboard-pull-req') {
@@ -591,7 +646,7 @@
         handleClipboardPullResponse(data.text);
       }
 
-      // 15. Session Disconnect Notice
+      // 14. Session Disconnect Notice
       else if (data.type === 'session-end') {
         stopAllSessions(data.reason || 'Partner ended the session.');
       }
@@ -618,7 +673,6 @@
 
     modal.classList.remove('hidden');
 
-    // 30s Countdown timer
     state.authSecondsRemaining = 30;
     updateAuthCountdownUI();
 
@@ -674,26 +728,19 @@
     try {
       showToast('Select screen or window to share with partner...', 'info');
 
-      const displayMediaOptions = {
-        video: {
-          cursor: 'always',
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: state.permissions.allowAudio ? {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false
-        } : false,
-        selfBrowserSurface: 'exclude',
-        surfaceSwitching: 'include',
-        systemAudio: 'include'
-      };
-
+      // Standard screen capture options (prioritize monitor displaySurface)
       let stream;
       try {
-        stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            cursor: 'always',
+            displaySurface: 'monitor',
+            frameRate: { ideal: 60, max: 60 }
+          },
+          audio: state.permissions.allowAudio,
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include'
+        });
       } catch (e1) {
         if (e1.name === 'NotAllowedError' || e1.name === 'AbortError') {
           if (state.activeConn) {
@@ -701,6 +748,7 @@
           }
           return;
         }
+        // Fallback without displaySurface or audio constraints
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
           audio: false
@@ -724,6 +772,11 @@
       // Call Viewer with local screen stream
       if (state.activeConn) {
         state.activeCall = state.peer.call(state.activeConn.peer, stream);
+        if (state.activeCall) {
+          state.activeCall.on('error', (err) => {
+            console.warn('[Host Call Error]', err);
+          });
+        }
         state.activeConn.send({
           type: 'accepted',
           permissions: state.permissions
@@ -777,7 +830,6 @@
 
       conn.on('open', () => {
         console.log('[Viewer Connected to Host DataChannel]');
-        // Ask Host for authorization
         conn.send({
           type: 'ask-permission',
           fromCode: state.myCode,
@@ -887,13 +939,11 @@
         let resHeight = null;
 
         stats.forEach(report => {
-          // Candidate pair RTT
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
             if (report.currentRoundTripTime !== undefined) {
               rtt = Math.round(report.currentRoundTripTime * 1000);
             }
           }
-          // Inbound RTP Video stats
           if (report.type === 'inbound-rtp' && report.kind === 'video') {
             if (report.framesPerSecond !== undefined) {
               fps = Math.round(report.framesPerSecond);
@@ -999,7 +1049,7 @@
         showToast('Screen recording saved & downloaded as .webm!', 'success');
       };
 
-      state.mediaRecorder.start(1000); // 1-second chunks
+      state.mediaRecorder.start(1000);
       state.isRecording = true;
       state.recordingSeconds = 0;
 
@@ -1039,195 +1089,6 @@
     if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
       state.mediaRecorder.stop();
     }
-  }
-
-  // =========================================================================
-  // P2P File Transfer Engine (16KB Chunking)
-  // =========================================================================
-  function sendFileOverDataChannel(file) {
-    if (!state.activeConn) {
-      showToast('Cannot send file: No active connection.', 'error');
-      return;
-    }
-
-    const transferId = 'tx_' + Math.random().toString(36).substring(2, 9);
-    const totalChunks = Math.ceil(file.size / FILE_CHUNK_SIZE);
-    
-    // Add transfer card to UI
-    renderTransferCard(transferId, file.name, file.size, 'upload');
-
-    // 1. Send file-start metadata
-    state.activeConn.send({
-      type: 'file-start',
-      id: transferId,
-      name: file.name,
-      size: file.size,
-      mimeType: file.type || 'application/octet-stream',
-      totalChunks
-    });
-
-    // 2. Read and stream chunks
-    let offset = 0;
-    let chunkIndex = 0;
-    const startTime = performance.now();
-
-    function readNextChunk() {
-      const slice = file.slice(offset, offset + FILE_CHUNK_SIZE);
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-        const dataUrl = e.target.result; // base64 payload
-        state.activeConn.send({
-          type: 'file-chunk',
-          id: transferId,
-          chunkIndex,
-          totalChunks,
-          data: dataUrl
-        });
-
-        offset += FILE_CHUNK_SIZE;
-        chunkIndex++;
-
-        // Update progress
-        const pct = Math.min(100, Math.round((chunkIndex / totalChunks) * 100));
-        const elapsed = (performance.now() - startTime) / 1000;
-        const speed = elapsed > 0 ? Math.round((offset / 1024) / elapsed) : 0;
-        updateTransferProgress(transferId, pct, `${speed} KB/s`);
-
-        if (offset < file.size) {
-          // Microtask yield to prevent blocking event loop
-          setTimeout(readNextChunk, 2);
-        } else {
-          // 3. Send file-end
-          state.activeConn.send({ type: 'file-end', id: transferId });
-          markTransferCompleted(transferId);
-          sound.success();
-          showToast(`File "${file.name}" sent successfully!`, 'success');
-        }
-      };
-
-      reader.readAsDataURL(slice);
-    }
-
-    readNextChunk();
-  }
-
-  function handleFileStart(meta) {
-    state.incomingTransfers.set(meta.id, {
-      id: meta.id,
-      name: meta.name,
-      size: meta.size,
-      mimeType: meta.mimeType,
-      totalChunks: meta.totalChunks,
-      receivedChunks: 0,
-      chunks: new Array(meta.totalChunks),
-      startTime: performance.now()
-    });
-
-    renderTransferCard(meta.id, meta.name, meta.size, 'download');
-    showToast(`Incoming file: ${meta.name} (${formatBytes(meta.size)})`, 'info');
-  }
-
-  function handleFileChunk(chunkData) {
-    const transfer = state.incomingTransfers.get(chunkData.id);
-    if (!transfer) return;
-
-    transfer.chunks[chunkData.chunkIndex] = chunkData.data;
-    transfer.receivedChunks++;
-
-    const pct = Math.min(100, Math.round((transfer.receivedChunks / transfer.totalChunks) * 100));
-    const elapsed = (performance.now() - transfer.startTime) / 1000;
-    const speed = elapsed > 0 ? Math.round(((transfer.receivedChunks * FILE_CHUNK_SIZE) / 1024) / elapsed) : 0;
-
-    updateTransferProgress(chunkData.id, pct, `${speed} KB/s`);
-  }
-
-  function handleFileEnd(endData) {
-    const transfer = state.incomingTransfers.get(endData.id);
-    if (!transfer) return;
-
-    markTransferCompleted(transfer.id);
-
-    // Convert base64 chunks back to Blob
-    const byteArrays = [];
-    for (let i = 0; i < transfer.chunks.length; i++) {
-      const dataUrl = transfer.chunks[i];
-      if (!dataUrl) continue;
-      const base64 = dataUrl.split(',')[1];
-      const byteChars = atob(base64);
-      const byteNumbers = new Uint8Array(byteChars.length);
-      for (let j = 0; j < byteChars.length; j++) {
-        byteNumbers[j] = byteChars.charCodeAt(j);
-      }
-      byteArrays.push(byteNumbers);
-    }
-
-    const blob = new Blob(byteArrays, { type: transfer.mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = transfer.name;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 100);
-
-    sound.success();
-    showToast(`File "${transfer.name}" received & downloaded!`, 'success');
-    state.incomingTransfers.delete(transfer.id);
-  }
-
-  function renderTransferCard(id, name, size, direction) {
-    const list = $('transfersList');
-    if (!list) return;
-    const emptyNotice = list.querySelector('.recent-empty') || list.querySelector('.text-slate-500');
-    if (emptyNotice) emptyNotice.remove();
-
-    const dirIcon = direction === 'upload' ? '↑' : '↓';
-    const card = document.createElement('div');
-    card.id = `card_${id}`;
-    card.className = 'transfer-card';
-    card.innerHTML = `
-      <div class="transfer-header">
-        <span class="transfer-filename">${dirIcon} ${name}</span>
-        <span class="transfer-size">${formatBytes(size)}</span>
-      </div>
-      <div class="transfer-progress-bg">
-        <div id="fill_${id}" class="transfer-progress-fill" style="width: 0%;"></div>
-      </div>
-      <div class="transfer-status-text">
-        <span id="speed_${id}">0 KB/s</span>
-        <span id="pct_${id}">0%</span>
-      </div>
-    `;
-    list.prepend(card);
-  }
-
-  function updateTransferProgress(id, pct, speed) {
-    const fill = $(`fill_${id}`);
-    const pctEl = $(`pct_${id}`);
-    const speedEl = $(`speed_${id}`);
-    if (fill) fill.style.width = `${pct}%`;
-    if (pctEl) pctEl.textContent = `${pct}%`;
-    if (speedEl) speedEl.textContent = speed;
-  }
-
-  function markTransferCompleted(id) {
-    const speedEl = $(`speed_${id}`);
-    const pctEl = $(`pct_${id}`);
-    if (speedEl) speedEl.textContent = 'Completed';
-    if (pctEl) pctEl.textContent = '100%';
-  }
-
-  function formatBytes(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   }
 
   // =========================================================================
@@ -1342,18 +1203,28 @@
       const y = Math.max(0, Math.min(rect.height, clientY - rect.top));
       return {
         pctX: +(x / rect.width).toFixed(4),
-        pctY: +(y / rect.height).toFixed(4)
+        pctY: +(y / rect.height).toFixed(4),
+        rawX: clientX - rect.left,
+        rawY: clientY - rect.top
       };
     }
 
     let lastMoveTime = 0;
     container.addEventListener('mousemove', (e) => {
+      const coords = getRelativeCoordinates(e);
+
+      if (state.mode === 'laser') {
+        state.laserX = e.clientX;
+        state.laserY = e.clientY;
+      } else {
+        state.laserX = -1;
+        state.laserY = -1;
+      }
+
       if (!state.activeConn) return;
       const now = performance.now();
-      if (now - lastMoveTime < 16) return; // 60hz rate limit
+      if (now - lastMoveTime < 16) return;
       lastMoveTime = now;
-
-      const coords = getRelativeCoordinates(e);
 
       if (state.mode === 'laser') {
         state.activeConn.send({
@@ -1371,6 +1242,11 @@
     });
 
     container.addEventListener('mousedown', (e) => {
+      // Ensure video is playing on gesture
+      if (video && video.paused) {
+        video.play().catch(() => {});
+      }
+
       if (!state.activeConn) return;
       const coords = getRelativeCoordinates(e);
       addClickRipple(e.clientX, e.clientY, state.mode === 'laser' ? '#ef4444' : '#38bdf8');
@@ -1411,7 +1287,7 @@
     window.addEventListener('keydown', (e) => {
       if (state.isDrawerOpen || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
       if (!state.activeConn) return;
-      if (e.key === 'F11') return; // Allow fullscreen
+      if (e.key === 'F11') return;
 
       state.activeConn.send({
         type: 'key-down',
@@ -1469,7 +1345,6 @@
     hudTimer = setTimeout(() => hud.classList.add('hidden'), 2000);
   }
 
-  // Relay DataChannel input to Node.js native host bridge when running locally
   function relayInputToHostBridge(eventData) {
     if (!state.hasServerApi) return;
     try {
@@ -1745,17 +1620,18 @@
       state.isDrawerOpen = false;
     });
 
-    // 15. Drawer Tabs Switcher
+    // 15. Drawer Tabs Switcher (Chat & Clipboard)
     const tabs = [
       { btn: 'tabBtnChat', pane: 'tabPaneChat' },
-      { btn: 'tabBtnFiles', pane: 'tabPaneFiles' },
       { btn: 'tabBtnClipboard', pane: 'tabPaneClipboard' }
     ];
     tabs.forEach(tab => {
       on($(tab.btn), 'click', () => {
         tabs.forEach(t => {
-          $(t.btn).classList.toggle('active', t.btn === tab.btn);
-          $(t.pane).classList.toggle('hidden', t.pane !== tab.pane);
+          const b = $(t.btn);
+          const p = $(t.pane);
+          if (b) b.classList.toggle('active', t.btn === tab.btn);
+          if (p) p.classList.toggle('hidden', t.pane !== tab.pane);
         });
       });
     });
@@ -1770,50 +1646,7 @@
       }
     });
 
-    // 17. File Upload Dropzone
-    const dropzone = $('dropzoneBox');
-    const filePicker = $('filePickerInput');
-    if (dropzone && filePicker) {
-      dropzone.addEventListener('click', () => filePicker.click());
-      filePicker.addEventListener('change', (e) => {
-        if (e.target.files && e.target.files[0]) {
-          sendFileOverDataChannel(e.target.files[0]);
-          e.target.value = '';
-        }
-      });
-      dropzone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropzone.classList.add('drag-over');
-      });
-      dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
-      dropzone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropzone.classList.remove('drag-over');
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-          sendFileOverDataChannel(e.dataTransfer.files[0]);
-        }
-      });
-    }
-
-    // Full Viewport Drag-and-Drop overlay
-    const videoContainer = $('videoContainer');
-    const dropOverlay = $('dropZoneOverlay');
-    if (videoContainer && dropOverlay) {
-      window.addEventListener('dragenter', (e) => {
-        if (state.activeConn) dropOverlay.classList.remove('hidden');
-      });
-      dropOverlay.addEventListener('dragover', (e) => e.preventDefault());
-      dropOverlay.addEventListener('dragleave', () => dropOverlay.classList.add('hidden'));
-      dropOverlay.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropOverlay.classList.add('hidden');
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-          sendFileOverDataChannel(e.dataTransfer.files[0]);
-        }
-      });
-    }
-
-    // 18. Shared Clipboard Push & Pull
+    // 17. Shared Clipboard Push & Pull
     on($('btnClipboardPush'), 'click', () => {
       const area = $('sharedClipboardText');
       if (area && state.activeConn) {
@@ -1829,18 +1662,17 @@
       }
     });
 
-    // 19. Clear Recent Sessions
+    // 18. Clear Recent Sessions
     on($('btnClearRecent'), 'click', () => {
       localStorage.removeItem('omnicast_recent_sessions');
       renderRecentSessions();
       showToast('Recent sessions cleared.', 'info');
     });
 
-    // 20. Quality Selector
+    // 19. Quality Selector
     on($('selectQuality'), 'change', (e) => {
       const quality = e.target.value;
       showToast(`Stream quality set to: ${quality.toUpperCase()}`, 'info');
-      // If active call exists, adjust sender constraints if supported
       if (state.activeCall && state.activeCall.peerConnection) {
         try {
           const senders = state.activeCall.peerConnection.getSenders();
@@ -1869,7 +1701,7 @@
       }
     });
 
-    // 21. Dismiss File Scheme Banner
+    // 20. Dismiss File Scheme Banner
     on($('btnDismissScheme'), 'click', () => {
       const b = $('fileSchemeBanner');
       if (b) b.classList.add('hidden');

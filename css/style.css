@@ -1346,91 +1346,7 @@ input:checked + .slider:before {
   background: var(--accent-coral-hover);
 }
 
-/* Tab 2: P2P File Transfer (16KB Chunks) */
-.dropzone-box {
-  border: 2px dashed var(--border-subtle);
-  border-radius: 12px;
-  padding: 1.75rem 1rem;
-  text-align: center;
-  background: var(--bg-input);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  margin-bottom: 1.25rem;
-}
-.dropzone-box:hover, .dropzone-box.drag-over {
-  border-color: var(--accent-coral);
-  background: rgba(239, 68, 68, 0.05);
-}
-.dropzone-icon {
-  color: var(--accent-coral);
-  margin-bottom: 0.5rem;
-}
-.dropzone-text {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #ffffff;
-  margin-bottom: 0.25rem;
-}
-.dropzone-sub {
-  font-size: 0.72rem;
-  color: var(--text-dim);
-}
-
-.transfers-list {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.transfer-card {
-  background: var(--bg-input);
-  border: 1px solid var(--border-card);
-  border-radius: 10px;
-  padding: 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-.transfer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.82rem;
-}
-.transfer-filename {
-  font-weight: 600;
-  color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 220px;
-}
-.transfer-size {
-  font-size: 0.72rem;
-  color: var(--text-dim);
-}
-.transfer-progress-bg {
-  width: 100%;
-  height: 6px;
-  background: var(--bg-subtle);
-  border-radius: 9999px;
-  overflow: hidden;
-}
-.transfer-progress-fill {
-  height: 100%;
-  background: var(--accent-coral);
-  border-radius: 9999px;
-  transition: width 0.1s linear;
-}
-.transfer-status-text {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  display: flex;
-  justify-content: space-between;
-}
-
-/* Tab 3: Shared Clipboard */
+/* Tab 2: Shared Clipboard */
 .clipboard-wrap {
   display: flex;
   flex-direction: column;
@@ -1616,24 +1532,6 @@ input:checked + .slider:before {
   font-size: 0.8rem;
   resize: none;
   outline: none;
-}
-
-/* Dropzone Overlay for Active Session */
-.drop-zone-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(6px);
-  z-index: 75;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  font-size: 1.25rem;
-  font-weight: 700;
-  gap: 0.75rem;
-  border: 3px dashed var(--accent-coral);
 }
 
 /* Loader Overlay */
