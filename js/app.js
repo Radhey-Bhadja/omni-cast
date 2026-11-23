@@ -207,7 +207,7 @@
 
     const m = getVideoRenderMetrics();
 
-    if (laserPoint && (Date.now() - laserPoint.time < 1200)) {
+    if (laserPoint && (Date.now() - laserPoint.time < 3000)) {
       const x = m.x + (laserPoint.x * m.w);
       const y = m.y + (laserPoint.y * m.h);
 
@@ -444,10 +444,10 @@
       state.peer.on('call', (call) => {
         console.log('[Incoming Screen Call from]', call.peer);
         state.activeCall = call;
-        call.answer(); // Viewer answers
 
-        call.on('stream', (stream) => {
-          console.log('[Stream Received on Viewer]', stream.id);
+        function attachRemoteStream(stream) {
+          if (!stream) return;
+          console.log('[Stream Received on Viewer]', stream.id, 'Tracks:', stream.getTracks().length);
           state.remoteStream = stream;
           state.isConnecting = false;
           if (state.connectTimeoutTimer) {
@@ -457,9 +457,50 @@
 
           const video = $('remoteVideo');
           if (video) {
-            video.srcObject = stream;
             video.muted = true;
-            video.play().catch(e => console.log('Autoplay hint:', e));
+            video.defaultMuted = true;
+            video.playsInline = true;
+            video.autoplay = true;
+            video.setAttribute('muted', '');
+            video.setAttribute('playsinline', '');
+            video.setAttribute('autoplay', '');
+
+            if (video.srcObject !== stream) {
+              video.srcObject = stream;
+            }
+
+            const playVideo = () => {
+              const p = video.play();
+              if (p !== undefined) {
+                p.catch(e => console.log('[Video Play Notice]:', e.message));
+              }
+            };
+
+            playVideo();
+
+            video.onloadedmetadata = () => {
+              console.log('[Video Metadata Loaded]', video.videoWidth, 'x', video.videoHeight);
+              playVideo();
+            };
+            video.oncanplay = () => playVideo();
+
+            stream.getVideoTracks().forEach(track => {
+              track.enabled = true;
+              track.onunmute = () => {
+                console.log('[Remote Video Track Unmuted]');
+                playVideo();
+              };
+            });
+
+            stream.onaddtrack = (e) => {
+              console.log('[Remote Track Dynamically Added]', e.track.kind);
+              if (e.track.kind === 'video') {
+                e.track.enabled = true;
+                e.track.onunmute = () => playVideo();
+              }
+              if (video.srcObject !== stream) video.srcObject = stream;
+              playVideo();
+            };
           }
 
           const loader = $('loaderOverlay');
@@ -468,10 +509,25 @@
           if (videoContainer) videoContainer.focus();
 
           sound.success();
-          showToast('Connected! You are viewing & controlling remote screen.', 'success');
+          showToast('Connected! Live screen view is active.', 'success');
           startPingHeartbeat();
           if (state.targetCode) saveRecentConnection(state.targetCode);
+        }
+
+        call.on('stream', (stream) => {
+          attachRemoteStream(stream);
         });
+
+        // Also bind directly to underlying RTCPeerConnection ontrack event
+        if (call.peerConnection) {
+          call.peerConnection.ontrack = (event) => {
+            console.log('[Native RTCPeerConnection ontrack]', event.track.kind);
+            const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+            attachRemoteStream(stream);
+          };
+        }
+
+        call.answer(); // Viewer answers
 
         call.on('close', () => {
           stopAllSessions('Your partner stopped sharing their screen.');
@@ -544,6 +600,15 @@
       // 6. Laser Pointer
       else if (data.type === 'laser') {
         laserPoint = { x: data.x, y: data.y, time: Date.now() };
+
+        // Move native host cursor across entire screen for 100% full-screen coverage
+        relayToNativeHost({
+          type: 'laser',
+          xPercent: data.x,
+          yPercent: data.y,
+          click: !!data.click
+        });
+
         if (state.isHost) {
           const cursor = $('hostRemoteCursor');
           if (cursor) {
@@ -554,7 +619,7 @@
         }
         if (data.click) {
           triggerLaserRipple(data.x, data.y);
-          if (state.isHost) showHostKeyHUD('🔴 Remote Laser Click');
+          if (state.isHost) showHostKeyHUD('🔴 Remote Laser Point');
           sound.play(750, 0.04);
         }
       }
@@ -845,16 +910,22 @@
 
     try {
       let stream;
+      const displayMediaOptions = {
+        video: {
+          displaySurface: 'monitor',
+          cursor: 'always',
+          frameRate: { ideal: 60, max: 60 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: false,
+        selfBrowserSurface: 'exclude',
+        surfaceSwitching: 'include',
+        systemAudio: 'include'
+      };
+
       try {
-        stream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            cursor: 'always',
-            frameRate: { ideal: 60, max: 60 },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
-          audio: true
-        });
+        stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
       } catch (e1) {
         if (e1.name === 'NotAllowedError' || e1.name === 'AbortError') {
           throw e1;
@@ -875,14 +946,26 @@
       state.localStream = stream;
       state.isHost = true;
 
+      // Keep host tab active in background so WebRTC encoding does not freeze
+      startBackgroundAudioKeepAlive();
+
       if (stream.getVideoTracks() && stream.getVideoTracks()[0]) {
-        stream.getVideoTracks()[0].onended = () => {
+        const vTrack = stream.getVideoTracks()[0];
+        if ('contentHint' in vTrack) {
+          vTrack.contentHint = 'motion';
+        }
+        vTrack.onended = () => {
           stopAllSessions('You stopped sharing your screen.');
         };
       }
 
       if (state.activeConn) {
         state.activeCall = state.peer.call(state.activeConn.peer, stream);
+        if (state.activeCall) {
+          state.activeCall.on('error', (err) => {
+            console.warn('[Host Call Error]', err);
+          });
+        }
         state.activeConn.send({ type: 'accepted' });
       }
 
@@ -1074,6 +1157,32 @@
     readNext();
   }
 
+  // Keep host tab active in background to avoid Chrome background-tab WebRTC freezing
+  function startBackgroundAudioKeepAlive() {
+    try {
+      if (state.keepAliveCtx) return;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0.00001; // virtually inaudible
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      state.keepAliveCtx = ctx;
+    } catch (e) {}
+  }
+
+  function stopBackgroundAudioKeepAlive() {
+    try {
+      if (state.keepAliveCtx) {
+        state.keepAliveCtx.close();
+        state.keepAliveCtx = null;
+      }
+    } catch (e) {}
+  }
+
   // =========================================================================
   // Stop Session / Disconnect
   // =========================================================================
@@ -1082,6 +1191,7 @@
     if (isStoppingSession) return;
     isStoppingSession = true;
 
+    stopBackgroundAudioKeepAlive();
     if (state.connectTimeoutTimer) clearTimeout(state.connectTimeoutTimer);
     stopPingHeartbeat();
 
@@ -1384,15 +1494,17 @@
       }
     });
 
-    // Remote Video Mouse Events
+    // Remote Video & Container Mouse Events (Full-Screen Pixel Coverage)
     const video = $('remoteVideo');
-    on(video, 'mousemove', (e) => {
+    const container = $('videoContainer');
+
+    function handleMouseMove(e) {
       const coords = getNormalizedCoords(e);
       if (!coords) return;
 
       if (state.mode === 'laser') {
+        laserPoint = { x: coords.xPercent, y: coords.yPercent, time: Date.now() };
         if (state.activeConn && state.activeConn.open) {
-          laserPoint = { x: coords.xPercent, y: coords.yPercent, time: Date.now() };
           state.activeConn.send({
             type: 'laser',
             x: coords.xPercent,
@@ -1411,11 +1523,14 @@
           });
         }
       }
-    });
+    }
 
-    on(video, 'mousedown', (e) => {
+    on(container, 'mousemove', handleMouseMove);
+    on(video, 'mousemove', handleMouseMove);
+
+    on(container, 'mousedown', (e) => {
+      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
       state.isMouseDown = true;
-      const container = $('videoContainer');
       if (container) container.focus();
       const coords = getNormalizedCoords(e);
       if (!coords) return;
@@ -1440,7 +1555,8 @@
       }
     });
 
-    on(video, 'mouseup', (e) => {
+    on(container, 'mouseup', (e) => {
+      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
       state.isMouseDown = false;
       if (state.mode !== 'control') return;
       const coords = getNormalizedCoords(e);
@@ -1467,7 +1583,8 @@
       }
     });
 
-    on(video, 'dblclick', (e) => {
+    on(container, 'dblclick', (e) => {
+      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
       if (state.mode !== 'control') return;
       const coords = getNormalizedCoords(e);
       if (!coords) return;
@@ -1479,7 +1596,8 @@
       });
     });
 
-    on(video, 'contextmenu', (e) => {
+    on(container, 'contextmenu', (e) => {
+      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
       e.preventDefault();
       if (state.mode === 'control') {
         const coords = getNormalizedCoords(e);
@@ -1492,7 +1610,8 @@
       }
     });
 
-    on(video, 'wheel', (e) => {
+    on(container, 'wheel', (e) => {
+      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
       if (state.mode !== 'control') return;
       e.preventDefault();
       sendRemoteInput({
@@ -1561,17 +1680,26 @@
 
     on($('chatForm'), 'submit', sendChatMessage);
 
-    // File Picker
-    const picker = $('filePickerInput');
-    on($('btnOpenFile'), 'click', () => {
-      if (picker) picker.click();
-    });
-
-    on(picker, 'change', (e) => {
-      if (e.target.files && e.target.files[0]) {
-        sendFileToFriend(e.target.files[0]);
+    // Global fallback: any interaction resumes video playback if suspended by browser
+    const ensureVideoPlaying = () => {
+      const video = $('remoteVideo');
+      if (video && video.paused && video.srcObject) {
+        video.play().catch(() => {});
       }
-    });
+    };
+    window.addEventListener('click', ensureVideoPlaying);
+    window.addEventListener('keydown', ensureVideoPlaying);
+    window.addEventListener('touchstart', ensureVideoPlaying);
+
+    // File Picker (drag & drop / programmatic)
+    const picker = $('filePickerInput');
+    if (picker) {
+      on(picker, 'change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          sendFileToFriend(e.target.files[0]);
+        }
+      });
+    }
 
     on($('btnCloseFileBanner'), 'click', () => {
       const banner = $('fileBanner');

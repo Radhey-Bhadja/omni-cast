@@ -35,6 +35,9 @@ using System;
 using System.Runtime.InteropServices;
 public class WinInputHelper {
     [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll")]
     public static extern bool SetCursorPos(int X, int Y);
 
     [DllImport("user32.dll")]
@@ -48,6 +51,9 @@ public class WinInputHelper {
 }
 "@
 Add-Type -TypeDefinition $source
+
+# Set DPI awareness so cursor coordinates cover 100% of physical pixels on high-DPI displays
+[WinInputHelper]::SetProcessDPIAware()
 
 $w = [WinInputHelper]::GetSystemMetrics(0)
 $h = [WinInputHelper]::GetSystemMetrics(1)
@@ -79,8 +85,16 @@ while($line = [Console]::ReadLine()) {
         "MOVE_PCT" {
             $px = [double]::Parse($parts[1], [System.Globalization.CultureInfo]::InvariantCulture)
             $py = [double]::Parse($parts[2], [System.Globalization.CultureInfo]::InvariantCulture)
-            $x = [int]($px * $w)
-            $y = [int]($py * $h)
+            if ($px -lt 0.0) { $px = 0.0 } elseif ($px -gt 1.0) { $px = 1.0 }
+            if ($py -lt 0.0) { $py = 0.0 } elseif ($py -gt 1.0) { $py = 1.0 }
+            
+            $curW = [WinInputHelper]::GetSystemMetrics(0)
+            $curH = [WinInputHelper]::GetSystemMetrics(1)
+            if ($curW -gt 0) { $w = $curW }
+            if ($curH -gt 0) { $h = $curH }
+
+            $x = [int][Math]::Round($px * [Math]::Max(0, ($w - 1)))
+            $y = [int][Math]::Round($py * [Math]::Max(0, ($h - 1)))
             [WinInputHelper]::SetCursorPos($x, $y)
         }
         "MDOWN" {
@@ -200,6 +214,18 @@ while($line = [Console]::ReadLine()) {
     const { type } = payload;
 
     switch (type) {
+      case 'laser':
+        const lx = payload.xPercent !== undefined ? payload.xPercent : payload.x;
+        const ly = payload.yPercent !== undefined ? payload.yPercent : payload.y;
+        if (lx !== undefined && ly !== undefined) {
+          this.execute(`MOVE_PCT ${lx} ${ly}`);
+        }
+        if (payload.click) {
+          this.execute(`MDOWN 0`);
+          this.execute(`MUP 0`);
+        }
+        break;
+
       case 'mousemove':
         if (payload.xPercent !== undefined && payload.yPercent !== undefined) {
           this.execute(`MOVE_PCT ${payload.xPercent} ${payload.yPercent}`);
