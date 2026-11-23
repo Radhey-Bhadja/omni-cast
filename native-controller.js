@@ -289,15 +289,27 @@ while($line = [Console]::ReadLine()) {
     let px = undefined;
     let py = undefined;
     if (payload.xPercent !== undefined) {
-      px = payload.xPercent;
+      px = parseFloat(payload.xPercent);
     } else if (payload.x !== undefined && payload.x <= 1.0) {
-      px = payload.x;
+      px = parseFloat(payload.x);
     }
 
     if (payload.yPercent !== undefined) {
-      py = payload.yPercent;
+      py = parseFloat(payload.yPercent);
     } else if (payload.y !== undefined && payload.y <= 1.0) {
-      py = payload.y;
+      py = parseFloat(payload.y);
+    }
+
+    if (typeof px === 'number' && !isNaN(px)) {
+      px = Math.max(0.0, Math.min(1.0, px));
+    } else {
+      px = undefined;
+    }
+
+    if (typeof py === 'number' && !isNaN(py)) {
+      py = Math.max(0.0, Math.min(1.0, py));
+    } else {
+      py = undefined;
     }
 
     switch (type) {

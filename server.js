@@ -40,6 +40,31 @@ function normalizeCode(rawCode) {
   return String(rawCode).replace(/[\s-]/g, '').trim();
 }
 
+// Rate Limiting & Abuse Prevention Trackers
+const connectionAttempts = new Map(); // socketId or IP -> [timestamps]
+const inputRateLimiters = new Map();  // socketId -> { count, resetTime }
+
+function isRateLimited(key, maxLimit = 10, windowMs = 60000) {
+  const now = Date.now();
+  const timestamps = connectionAttempts.get(key) || [];
+  const valid = timestamps.filter(t => now - t < windowMs);
+  if (valid.length >= maxLimit) return true;
+  valid.push(now);
+  connectionAttempts.set(key, valid);
+  return false;
+}
+
+function checkInputRate(socketId, maxPerSec = 120) {
+  const now = Date.now();
+  let entry = inputRateLimiters.get(socketId);
+  if (!entry || now > entry.resetTime) {
+    entry = { count: 0, resetTime: now + 1000 };
+    inputRateLimiters.set(socketId, entry);
+  }
+  entry.count++;
+  return entry.count <= maxPerSec;
+}
+
 // REST Endpoints
 app.get('/api/status', (req, res) => {
   res.json({
@@ -56,11 +81,33 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// Dynamic STUN/TURN Relays Endpoint
+app.get('/api/turn-credentials', (req, res) => {
+  // If custom coturn or Twilio credentials are configured in environment
+  const turnUrl = process.env.TURN_URL || 'turn:openrelay.metered.ca:443';
+  const turnUsername = process.env.TURN_USERNAME || 'openrelayproject';
+  const turnCredential = process.env.TURN_CREDENTIAL || 'openrelayproject';
+
+  res.json({
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+      {
+        urls: [turnUrl, 'turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443?transport=tcp'],
+        username: turnUsername,
+        credential: turnCredential
+      }
+    ]
+  });
+});
+
 // Host Browser Input Relay Endpoint (when Host forwards DataChannel input to OS)
 app.post('/api/host-input', (req, res) => {
   try {
     const { event } = req.body;
-    if (event) {
+    if (event && typeof event === 'object') {
       nativeController.handleEvent(event);
     }
     res.json({ ok: true });
@@ -104,12 +151,18 @@ io.on('connection', (socket) => {
     socketDirectory.set(socket.id, { role: 'host', code: cleanCode });
     socket.join(cleanCode);
 
-    console.log(`[Host Registered] Code: ${cleanCode} (Socket: ${socket.id})`);
+    console.log(`[Host Registered] Code: ${cleanCode} (Socket: ${socket.id}, Unattended PIN: ${pin ? 'SET' : 'NONE'})`);
     if (callback) callback({ success: true, code: cleanCode });
   });
 
   // 2. Viewer requests connection to Host via 9-digit code
   socket.on('request-connection', ({ code, pin, clientInfo }, callback) => {
+    const ip = socket.handshake.address;
+    if (isRateLimited(ip, 12, 60000)) {
+      if (callback) callback({ success: false, error: 'Too many connection attempts. Please wait 1 minute.' });
+      return;
+    }
+
     const cleanCode = normalizeCode(code);
     if (!cleanCode || cleanCode.length < 6 || cleanCode.length > 9) {
       if (callback) callback({ success: false, error: 'Please enter a valid 9-digit Access Code.' });
@@ -132,19 +185,35 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Verify PIN if host set one
-    if (room.pin && room.pin !== String(pin).trim()) {
-      if (callback) callback({ success: false, error: 'Invalid Security PIN for this Remote Desk.' });
-      return;
-    }
-
     socketDirectory.set(socket.id, { role: 'viewer', code: cleanCode });
     socket.join(cleanCode);
 
-    // Notify Host of incoming request
+    // Unattended Access Auto-Approval Check
+    const providedPin = pin ? String(pin).trim() : '';
+    const isUnattendedMatch = Boolean(room.pin && room.pin === providedPin);
+
+    if (isUnattendedMatch) {
+      console.log(`[Unattended Auth Success] Viewer ${socket.id} matched PIN for room ${cleanCode}`);
+      room.viewerSocketId = socket.id;
+
+      io.to(room.hostSocketId).emit('unattended-connection-approved', {
+        viewerSocketId: socket.id,
+        permissions: room.permissions
+      });
+
+      if (callback) callback({
+        success: true,
+        autoApproved: true,
+        hostSocketId: room.hostSocketId,
+        permissions: room.permissions
+      });
+      return;
+    }
+
+    // Interactive Authorization: Notify Host of incoming request
     io.to(room.hostSocketId).emit('incoming-connection-request', {
       viewerSocketId: socket.id,
-      clientInfo: clientInfo || { userAgent: 'Web Browser', ip: socket.handshake.address }
+      clientInfo: clientInfo || { userAgent: 'Web Browser', ip }
     });
 
     console.log(`[Connection Requested] Viewer ${socket.id} -> Host ${room.hostSocketId} for room ${cleanCode}`);
@@ -188,7 +257,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 4. WebRTC Signaling Relays (Offer, Answer, ICE Candidates)
+  // 4. WebRTC Signaling Relays (Offer, Answer, ICE Candidates, ICE Restart)
   socket.on('webrtc-offer', ({ targetSocketId, offer }) => {
     io.to(targetSocketId).emit('webrtc-offer', {
       senderSocketId: socket.id,
@@ -207,6 +276,12 @@ io.on('connection', (socket) => {
     io.to(targetSocketId).emit('webrtc-ice-candidate', {
       senderSocketId: socket.id,
       candidate
+    });
+  });
+
+  socket.on('request-ice-restart', ({ targetSocketId }) => {
+    io.to(targetSocketId).emit('request-ice-restart', {
+      senderSocketId: socket.id
     });
   });
 
@@ -237,8 +312,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 6. Direct Input Event Relay via Socket (optional backup when data channel is re-establishing)
+  // 6. Direct Input Event Relay via Socket (Rate-limited flood protection)
   socket.on('relay-input', (eventData) => {
+    if (!checkInputRate(socket.id, 120)) return; // Drop flooded events
+
     const info = socketDirectory.get(socket.id);
     if (!info || info.role !== 'viewer') return;
 

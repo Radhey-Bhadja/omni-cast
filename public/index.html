@@ -105,6 +105,18 @@
               <span>Refresh ID</span>
             </button>
           </div>
+
+          <!-- Unattended Access PIN Setup -->
+          <div class="unattended-row">
+            <label class="unattended-toggle-label">
+              <input type="checkbox" id="toggleUnattendedAccess">
+              <span class="unattended-text">Unattended Access (Password)</span>
+            </label>
+            <div id="unattendedPinContainer" class="unattended-pin-wrap hidden">
+              <input type="password" id="hostUnattendedPin" class="unattended-pin-input" placeholder="Set PIN (e.g. 1234)" maxlength="16">
+              <button type="button" id="btnSavePin" class="btn-pin-action">Save</button>
+            </div>
+          </div>
         </section>
 
         <!-- CARD 2: Connect to Remote Desk -->
@@ -138,6 +150,22 @@
                   required
                 >
               </div>
+            </div>
+
+            <!-- Optional PIN for Unattended Connection -->
+            <div class="pin-input-group">
+              <div class="input-label">
+                <span>Access PIN / Password</span>
+                <span class="text-xs text-slate-500 font-mono">Optional</span>
+              </div>
+              <input 
+                type="password" 
+                id="targetPinInput" 
+                class="target-pin-input" 
+                placeholder="Enter PIN if host set unattended access" 
+                maxlength="16"
+                autocomplete="off"
+              >
             </div>
 
             <button type="submit" id="btnConnect" class="btn-main-connect">
@@ -194,6 +222,17 @@
             </div>
             <label class="switch">
               <input type="checkbox" id="permClipboard" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="perm-item">
+            <div class="perm-info">
+              <span class="perm-label">File Transfer</span>
+              <span class="perm-desc">P2P chunked binary file transfer</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="permFileTransfer" checked>
               <span class="slider"></span>
             </label>
           </div>
@@ -375,7 +414,7 @@
       <button id="btnCloseDrawer" class="btn-close-drawer" type="button" title="Close Tools Drawer">✕</button>
     </div>
 
-    <!-- 2 Tabs Navigation: Chat & Clipboard -->
+    <!-- 3 Tabs Navigation: Chat, Clipboard & File Transfer -->
     <div class="drawer-tabs">
       <button id="tabBtnChat" class="drawer-tab active" type="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
@@ -384,6 +423,10 @@
       <button id="tabBtnClipboard" class="drawer-tab" type="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
         <span>Clipboard</span>
+      </button>
+      <button id="tabBtnFiles" class="drawer-tab" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        <span>Files</span>
       </button>
     </div>
 
@@ -415,6 +458,42 @@
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>
               <span>Pull Remote</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: P2P File Transfer -->
+      <div id="tabPaneFiles" class="drawer-tab-pane hidden">
+        <div class="file-transfer-wrap">
+          <p class="text-xs text-slate-400 mb-2">Transfer files chunk-by-chunk directly between browsers over RTCDataChannel with backpressure flow control.</p>
+          
+          <div id="fileDropZone" class="file-drop-zone">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            <div class="drop-zone-text">Drag & drop a file here, or browse</div>
+            <label class="btn-browse-file">
+              <span>Choose File</span>
+              <input type="file" id="filePickerInput" class="hidden">
+            </label>
+          </div>
+
+          <!-- Progress Bar Box (Shown during active transfer) -->
+          <div id="fileProgressBox" class="file-progress-box hidden">
+            <div class="file-progress-header">
+              <span id="transferFileName" class="file-name">filename.zip</span>
+              <span id="transferPercent" class="file-pct">0%</span>
+            </div>
+            <div class="file-progress-bar-bg">
+              <div id="fileProgressBarFill" class="file-progress-bar-fill"></div>
+            </div>
+            <div class="file-progress-meta">
+              <span id="transferBytes">0 KB / 0 KB</span>
+              <span id="transferStatusText">Sending chunks...</span>
+            </div>
+          </div>
+
+          <div class="transfers-history-title">Session Transferred Files</div>
+          <div id="transfersList" class="transfers-list">
+            <div id="transfersEmptyText" class="text-xs text-slate-400 text-center py-4">No files transferred yet.</div>
           </div>
         </div>
       </div>

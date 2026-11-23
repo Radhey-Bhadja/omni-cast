@@ -87,12 +87,13 @@
     remoteStream: null,     // Viewer Remote MediaStream
     mode: 'control',        // 'control' | 'laser'
     isMuted: true,
-    isFitContain: true,
+    scalingMode: 'fit',     // 'fit' | 'stretch' | 'original'
     hasServerApi: false,
     unreadMessages: 0,
     isDrawerOpen: false,
     isKeysPopoverOpen: false,
-    
+    activeDrawerTab: 'chat',
+
     // Authorization Modal Countdown
     authCountdownTimer: null,
     authSecondsRemaining: 30,
@@ -100,18 +101,34 @@
     pendingClientInfo: null,
     pendingPermissions: null,
 
-    // Permissions (File section removed per user specification)
+    // Unattended Access PIN Setup
+    unattendedEnabled: false,
+    unattendedPin: sessionStorage.getItem('omnicast_unattended_pin') || '',
+
+    // Permissions
     permissions: {
       allowAudio: true,
       allowPointer: true,
       allowClipboard: true,
+      allowFileTransfer: true,
       nativeOsControl: true
     },
 
-    // WebRTC Stats Polling
+    // Candidate Queue & Reconnection
+    pendingIceCandidates: [],
+    iceRestartAttempts: 0,
+
+    // P2P File Transfer Engine
+    incomingFiles: {},
+    activeFileTransfer: null,
+
+    // WebRTC Stats Polling & Adaptive Quality
     statsInterval: null,
     prevBytesReceived: 0,
+    prevPacketsLost: 0,
+    prevPacketsReceived: 0,
     prevTimestamp: 0,
+    consecutivePoorNetworkCount: 0,
 
     // Screen Recording
     mediaRecorder: null,
@@ -531,14 +548,43 @@
     if (state.targetCode) saveRecentSession(state.targetCode);
   }
 
+  // Dynamic STUN/TURN Discovery
+  async function fetchTurnCredentials() {
+    try {
+      const res = await fetch('/api/turn-credentials');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.iceServers && Array.isArray(data.iceServers)) {
+          console.log('[OmniCast] Loaded dynamic STUN/TURN relays from server:', data.iceServers.length, 'servers');
+          PEER_CONFIG.config.iceServers = data.iceServers;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Safe ICE Candidate Queue Flush
+  async function flushIceCandidateQueue(pc) {
+    if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) return;
+    while (state.pendingIceCandidates.length > 0) {
+      const cand = state.pendingIceCandidates.shift();
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (err) {
+        console.warn('[Flush Candidate Catch]', err);
+      }
+    }
+  }
+
   // =========================================================================
   // PeerJS WebRTC Initialization
   // =========================================================================
-  function initPeer() {
+  async function initPeer() {
     if (typeof Peer === 'undefined') {
       setTimeout(initPeer, 200);
       return;
     }
+
+    await fetchTurnCredentials();
 
     try {
       if (state.peer) {
@@ -623,18 +669,53 @@
         };
 
         const hookPCTracks = () => {
-          if (call.peerConnection && !call.peerConnection._tracksHooked) {
-            call.peerConnection._tracksHooked = true;
-            call.peerConnection.addEventListener('track', (event) => {
+          const pc = call.peerConnection;
+          if (pc && !pc._tracksHooked) {
+            pc._tracksHooked = true;
+
+            // Hook setRemoteDescription to flush candidate queue automatically
+            const originalSetRemote = pc.setRemoteDescription.bind(pc);
+            pc.setRemoteDescription = async (...args) => {
+              const res = await originalSetRemote(...args);
+              flushIceCandidateQueue(pc);
+              return res;
+            };
+
+            pc.ontrack = (event) => {
+              console.log('[Direct RTCPeerConnection ontrack]', event.track.kind);
+              event.track.enabled = true;
+              const s = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+              attachRemoteStream(s);
+            };
+
+            pc.addEventListener('track', (event) => {
               console.log('[Direct RTCPeerConnection track event]', event.track.kind);
               event.track.enabled = true;
               const s = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
               attachRemoteStream(s);
             });
-            call.peerConnection.addEventListener('connectionstatechange', () => {
-              console.log('[RTCPeerConnection state]', call.peerConnection.connectionState);
-              if (call.peerConnection.connectionState === 'connected') {
+
+            pc.addEventListener('connectionstatechange', () => {
+              console.log('[RTCPeerConnection state]', pc.connectionState);
+              if (pc.connectionState === 'connected') {
                 checkReceivers();
+              }
+            });
+
+            // ICE Restart & Reconnection Watcher
+            pc.addEventListener('iceconnectionstatechange', async () => {
+              console.log('[RTCPeerConnection ICE State]', pc.iceConnectionState);
+              if (pc.iceConnectionState === 'failed') {
+                console.warn('[ICE State Failed] Attempting session recovery via ICE restart...');
+                showToast('Network blip detected. Reconnecting (ICE Restart)...', 'info');
+                try {
+                  if (state.isHost) {
+                    const offer = await pc.createOffer({ iceRestart: true });
+                    await pc.setLocalDescription(offer);
+                  } else if (state.activeConn) {
+                    state.activeConn.send({ type: 'request-ice-restart' });
+                  }
+                } catch (e) {}
               }
             });
           }
@@ -681,6 +762,16 @@
         state.pendingClientInfo = data.clientInfo || { browser: 'WebRTC Browser', os: 'Desktop' };
         state.pendingPermissions = data.permissions || {};
         
+        // Unattended Access Auto-Authorization Check
+        const savedPin = state.unattendedPin;
+        const incomingPin = data.pin ? String(data.pin).trim() : '';
+        if (state.unattendedEnabled && savedPin && savedPin === incomingPin) {
+          console.log('[OmniCast] Unattended Access PIN Matched! Auto-authorizing connection.');
+          showToast('Unattended connection authorized by PIN.', 'info');
+          acceptIncomingConnection();
+          return;
+        }
+
         sound.ring();
         showIncomingAuthModal(callerCode, state.pendingClientInfo);
       }
@@ -774,7 +865,23 @@
         handleClipboardPullResponse(data.text);
       }
 
-      // 14. Session Disconnect Notice
+      // 14. P2P Binary File Transfer
+      else if (data.type === 'file-meta') {
+        handleIncomingFileMeta(data);
+      } else if (data.type === 'file-chunk') {
+        handleIncomingFileChunk(data);
+      } else if (data.type === 'file-complete') {
+        handleIncomingFileComplete(data);
+      } else if (data.type === 'file-cancel') {
+        handleIncomingFileCancel(data);
+      }
+
+      // 15. Remote ICE Restart Request
+      else if (data.type === 'request-ice-restart') {
+        handleRemoteIceRestartRequest();
+      }
+
+      // 16. Session Disconnect Notice
       else if (data.type === 'session-end') {
         stopAllSessions(data.reason || 'Partner ended the session.');
       }
@@ -979,9 +1086,13 @@
 
       conn.on('open', () => {
         console.log('[Viewer Connected to Host DataChannel]');
+        const pinInput = $('targetPinInput');
+        const pin = pinInput ? pinInput.value.trim() : '';
+
         conn.send({
           type: 'ask-permission',
           fromCode: state.myCode,
+          pin: pin,
           clientInfo: {
             browser: navigator.userAgent.includes('Chrome') ? 'Google Chrome' : navigator.userAgent.includes('Firefox') ? 'Mozilla Firefox' : 'Web Browser',
             platform: navigator.platform || 'Desktop'
@@ -1073,7 +1184,10 @@
   function startStatsPolling() {
     stopStatsPolling();
     state.prevBytesReceived = 0;
+    state.prevPacketsLost = 0;
+    state.prevPacketsReceived = 0;
     state.prevTimestamp = performance.now();
+    state.consecutivePoorNetworkCount = 0;
 
     state.statsInterval = setInterval(async () => {
       if (!state.activeCall || !state.activeCall.peerConnection) return;
@@ -1086,6 +1200,8 @@
         let bitrate = null;
         let resWidth = null;
         let resHeight = null;
+        let jitter = null;
+        let packetLossPct = null;
 
         stats.forEach(report => {
           if (report.type === 'candidate-pair' && report.state === 'succeeded') {
@@ -1097,9 +1213,32 @@
             if (report.framesPerSecond !== undefined) {
               fps = Math.round(report.framesPerSecond);
             }
+            if (report.jitter !== undefined) {
+              jitter = Math.round(report.jitter * 1000);
+            }
             if (report.frameWidth && report.frameHeight) {
               resWidth = report.frameWidth;
               resHeight = report.frameHeight;
+            }
+            // Packet loss monitoring
+            if (report.packetsLost !== undefined && report.packetsReceived !== undefined) {
+              const lostDiff = Math.max(0, report.packetsLost - state.prevPacketsLost);
+              const recvDiff = Math.max(0, report.packetsReceived - state.prevPacketsReceived);
+              const totalPackets = lostDiff + recvDiff;
+              if (totalPackets > 10) {
+                packetLossPct = Math.min(100, Math.round((lostDiff / totalPackets) * 100));
+                if (packetLossPct > 5) {
+                  state.consecutivePoorNetworkCount++;
+                  if (state.consecutivePoorNetworkCount >= 3) {
+                    triggerAdaptiveQualityDowngrade();
+                    state.consecutivePoorNetworkCount = 0;
+                  }
+                } else {
+                  state.consecutivePoorNetworkCount = 0;
+                }
+              }
+              state.prevPacketsLost = report.packetsLost;
+              state.prevPacketsReceived = report.packetsReceived;
             }
             if (report.bytesReceived !== undefined) {
               const now = performance.now();
@@ -1337,6 +1476,300 @@
   }
 
   // =========================================================================
+  // P2P Chunked Binary File Transfer Engine (Backpressure Flow Control)
+  // =========================================================================
+  const CHUNK_SIZE = 16384; // 16 KB chunk size for WebRTC DataChannel
+  const BUFFER_HIGH_THRESHOLD = 262144; // 256 KB pause
+  const BUFFER_LOW_THRESHOLD = 65536;   // 64 KB resume
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+  }
+
+  function showFileProgress(name, totalBytes, action) {
+    const box = $('fileProgressBox');
+    if (!box) return;
+    box.classList.remove('hidden');
+    const elName = $('transferFileName');
+    const elPct = $('transferPercent');
+    const elFill = $('fileProgressBarFill');
+    const elBytes = $('transferBytes');
+    const elStatus = $('transferStatusText');
+    if (elName) elName.textContent = name;
+    if (elPct) elPct.textContent = '0%';
+    if (elFill) elFill.style.width = '0%';
+    if (elBytes) elBytes.textContent = `0 B / ${formatBytes(totalBytes)}`;
+    if (elStatus) elStatus.textContent = `${action}...`;
+  }
+
+  function updateFileProgress(transferredBytes, totalBytes, statusText) {
+    const pct = totalBytes > 0 ? Math.min(100, Math.round((transferredBytes / totalBytes) * 100)) : 0;
+    const elPct = $('transferPercent');
+    const elFill = $('fileProgressBarFill');
+    const elBytes = $('transferBytes');
+    const elStatus = $('transferStatusText');
+    if (elPct) elPct.textContent = `${pct}%`;
+    if (elFill) elFill.style.width = `${pct}%`;
+    if (elBytes) elBytes.textContent = `${formatBytes(transferredBytes)} / ${formatBytes(totalBytes)}`;
+    if (elStatus && statusText) elStatus.textContent = statusText;
+  }
+
+  function hideFileProgress() {
+    const box = $('fileProgressBox');
+    if (box) box.classList.add('hidden');
+  }
+
+  function addFileToHistory(name, size, type, downloadUrl = null) {
+    const list = $('transfersList');
+    const empty = $('transfersEmptyText');
+    if (empty) empty.classList.add('hidden');
+    if (!list) return;
+
+    const item = document.createElement('div');
+    item.className = 'transfer-history-item';
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const isSent = type === 'Sent';
+
+    item.innerHTML = `
+      <div class="transfer-item-left">
+        <div class="transfer-icon ${isSent ? 'icon-sent' : 'icon-recv'}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            ${isSent 
+              ? '<line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline>' 
+              : '<line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline>'}
+          </svg>
+        </div>
+        <div>
+          <div class="transfer-item-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+          <div class="transfer-item-meta">${formatBytes(size)} • ${timeStr} • ${type}</div>
+        </div>
+      </div>
+      ${downloadUrl ? `<a href="${downloadUrl}" download="${escapeHtml(name)}" class="btn-download-item" title="Save file to disk">Save</a>` : ''}
+    `;
+    list.prepend(item);
+  }
+
+  async function sendFileOverDataChannel(file) {
+    if (!state.activeConn || !state.activeConn.open) {
+      showToast('No active connection. Cannot send file.', 'error');
+      return;
+    }
+    if (!state.permissions.allowFileTransfer) {
+      showToast('File transfer is disabled in session permissions.', 'warning');
+      return;
+    }
+    if (!file) return;
+
+    const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+    showFileProgress(file.name, file.size, 'Sending file');
+    showToast(`Sending ${file.name} (${formatBytes(file.size)})...`, 'info');
+
+    // 1. Notify partner of incoming file metadata
+    state.activeConn.send({
+      type: 'file-meta',
+      fileId,
+      name: file.name,
+      size: file.size,
+      mime: file.type || 'application/octet-stream',
+      totalChunks
+    });
+
+    // 2. Stream chunks with backpressure flow control
+    let offset = 0;
+    let chunkIndex = 0;
+    const rawDc = state.activeConn.dataChannel;
+
+    state.activeFileTransfer = { fileId, cancelled: false };
+
+    try {
+      while (offset < file.size) {
+        if (state.activeFileTransfer && state.activeFileTransfer.cancelled) {
+          state.activeConn.send({ type: 'file-cancel', fileId });
+          hideFileProgress();
+          showToast('File transfer cancelled.', 'info');
+          return;
+        }
+
+        // Backpressure flow control check on native RTCDataChannel
+        if (rawDc && rawDc.bufferedAmount > BUFFER_HIGH_THRESHOLD) {
+          await new Promise((resolve) => {
+            const onLow = () => {
+              rawDc.removeEventListener('bufferedamountlow', onLow);
+              resolve();
+            };
+            try {
+              rawDc.bufferedAmountLowThreshold = BUFFER_LOW_THRESHOLD;
+              rawDc.addEventListener('bufferedamountlow', onLow);
+            } catch (e) {
+              setTimeout(resolve, 50);
+              return;
+            }
+            setTimeout(resolve, 600); // Safety timeout
+          });
+        }
+
+        const slice = file.slice(offset, offset + CHUNK_SIZE);
+        const buffer = await slice.arrayBuffer();
+
+        // Convert chunk to base64 string
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const b64 = window.btoa(binary);
+
+        state.activeConn.send({
+          type: 'file-chunk',
+          fileId,
+          chunkIndex,
+          data: b64
+        });
+
+        offset += slice.size;
+        chunkIndex++;
+        updateFileProgress(offset, file.size, 'Sending chunks...');
+
+        if (chunkIndex % 8 === 0) {
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+
+      // 3. Send complete
+      state.activeConn.send({
+        type: 'file-complete',
+        fileId
+      });
+
+      hideFileProgress();
+      addFileToHistory(file.name, file.size, 'Sent');
+      sound.success();
+      showToast(`File "${file.name}" sent successfully!`, 'success');
+
+    } catch (err) {
+      console.error('[Send File Error]', err);
+      hideFileProgress();
+      showToast('File transfer failed: ' + (err.message || err), 'error');
+    } finally {
+      state.activeFileTransfer = null;
+    }
+  }
+
+  function handleIncomingFileMeta(data) {
+    if (!state.permissions.allowFileTransfer) {
+      showToast('Incoming file rejected: File transfer disabled in permissions.', 'warning');
+      return;
+    }
+
+    state.incomingFiles[data.fileId] = {
+      name: data.name,
+      size: data.size,
+      mime: data.mime || 'application/octet-stream',
+      totalChunks: data.totalChunks,
+      receivedChunks: 0,
+      chunks: new Array(data.totalChunks),
+      receivedBytes: 0
+    };
+
+    showFileProgress(data.name, data.size, 'Receiving file');
+    showToast(`Incoming file: ${data.name} (${formatBytes(data.size)})`, 'info');
+  }
+
+  function handleIncomingFileChunk(data) {
+    const file = state.incomingFiles[data.fileId];
+    if (!file) return;
+
+    try {
+      const binary = window.atob(data.data);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      file.chunks[data.chunkIndex] = bytes;
+      file.receivedChunks++;
+      file.receivedBytes += len;
+
+      updateFileProgress(file.receivedBytes, file.size, 'Receiving chunks...');
+    } catch (e) {
+      console.warn('[Chunk decode error]', e);
+    }
+  }
+
+  function handleIncomingFileComplete(data) {
+    const file = state.incomingFiles[data.fileId];
+    if (!file) return;
+
+    try {
+      const blob = new Blob(file.chunks, { type: file.mime });
+      const downloadUrl = URL.createObjectURL(blob);
+
+      // Auto-trigger browser download
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      hideFileProgress();
+      addFileToHistory(file.name, file.size, 'Received', downloadUrl);
+      sound.success();
+      showToast(`Received and downloaded: ${file.name}`, 'success');
+
+    } catch (e) {
+      console.error('[File Complete Assembly Error]', e);
+      showToast('Failed to reconstruct file: ' + e.message, 'error');
+    } finally {
+      delete state.incomingFiles[data.fileId];
+    }
+  }
+
+  function handleIncomingFileCancel(data) {
+    if (state.incomingFiles[data.fileId]) {
+      delete state.incomingFiles[data.fileId];
+    }
+    hideFileProgress();
+    showToast('File transfer was cancelled by partner.', 'info');
+  }
+
+  async function handleRemoteIceRestartRequest() {
+    if (!state.isHost) return;
+    const pc = state.activeCall && state.activeCall.peerConnection;
+    if (!pc) return;
+    try {
+      console.log('[OmniCast] Partner requested ICE restart. Re-negotiating...');
+      showToast('Re-negotiating connection (ICE Restart)...', 'info');
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+    } catch (e) {
+      console.warn('[ICE Restart Error]', e);
+    }
+  }
+
+  function triggerAdaptiveQualityDowngrade() {
+    const sel = $('selectQuality');
+    if (!sel) return;
+    const current = sel.value;
+    let next = current;
+    if (current === 'auto' || current === '1080p') next = '720p';
+    else if (current === '720p') next = '480p';
+
+    if (next !== current) {
+      sel.value = next;
+      sel.dispatchEvent(new Event('change'));
+      showToast(`Network congestion detected. Scaled down to ${next.toUpperCase()}`, 'warning');
+    }
+  }
+
+  // =========================================================================
   // Remote Control Handlers (Viewer to Host)
   // =========================================================================
   function bindViewerInputEvents() {
@@ -1359,7 +1792,7 @@
       let offsetX = 0;
       let offsetY = 0;
 
-      if (state.isFitContain && vWidth > 0 && vHeight > 0 && rect.width > 0 && rect.height > 0) {
+      if (state.scalingMode === 'fit' && vWidth > 0 && vHeight > 0 && rect.width > 0 && rect.height > 0) {
         const videoRatio = vWidth / vHeight;
         const elemRatio = rect.width / rect.height;
 
@@ -1376,6 +1809,17 @@
           offsetX = 0;
           offsetY = (rect.height - renderHeight) / 2;
         }
+      } else if (state.scalingMode === 'original' && vWidth > 0 && vHeight > 0) {
+        renderWidth = vWidth;
+        renderHeight = vHeight;
+        offsetX = Math.max(0, (rect.width - renderWidth) / 2);
+        offsetY = Math.max(0, (rect.height - renderHeight) / 2);
+      } else {
+        // 'stretch': fills entire rect
+        renderWidth = rect.width;
+        renderHeight = rect.height;
+        offsetX = 0;
+        offsetY = 0;
       }
 
       const relX = clientX - (rect.left + offsetX);
@@ -1433,7 +1877,6 @@
     });
 
     container.addEventListener('mousedown', (e) => {
-      // Ensure video is playing on gesture
       if (video && video.paused) {
         video.play().catch(() => {});
       }
@@ -1455,6 +1898,17 @@
       const coords = getRelativeCoordinates(e);
       state.activeConn.send({
         type: 'mouse-up',
+        button: e.button,
+        x: coords.pctX,
+        y: coords.pctY
+      });
+    });
+
+    container.addEventListener('dblclick', (e) => {
+      if (!state.activeConn) return;
+      const coords = getRelativeCoordinates(e);
+      state.activeConn.send({
+        type: 'double-click',
         button: e.button,
         x: coords.pctX,
         y: coords.pctY
@@ -1531,11 +1985,21 @@
       });
     }, { passive: false });
 
-    // Keyboard events
+    // Keyboard events with browser shortcut protection
     window.addEventListener('keydown', (e) => {
       if (state.isDrawerOpen || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
       if (!state.activeConn) return;
       if (e.key === 'F11') return;
+
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      if (
+        e.key === 'Tab' || 
+        e.key === 'Backspace' || 
+        (isCtrlOrMeta && ['s', 'w', 'o', 'p', 'f', 't', 'n', 'r'].includes(e.key.toLowerCase())) ||
+        e.key === 'F5'
+      ) {
+        e.preventDefault();
+      }
 
       state.activeConn.send({
         type: 'key-down',
@@ -1846,23 +2310,39 @@
       showToast('Laser pointer mode active', 'info');
     });
 
-    // 10. Aspect Ratio / Fit Toggle
+    // 10. Aspect Ratio / 3-Way Scaling Toggle (Fit -> Stretch -> 1:1 Original)
     on($('btnToggleFit'), 'click', () => {
-      state.isFitContain = !state.isFitContain;
+      const modes = ['fit', 'stretch', 'original'];
+      const nextIdx = (modes.indexOf(state.scalingMode) + 1) % modes.length;
+      state.scalingMode = modes[nextIdx];
       const video = $('remoteVideo');
       const label = $('fitLabel');
-      if (video) video.classList.toggle('fit-original', !state.isFitContain);
-      if (label) label.textContent = state.isFitContain ? 'Fit' : '1:1';
-      showToast(state.isFitContain ? 'Fit to Screen' : 'Original 1:1 Scale', 'info');
+      if (video) {
+        video.classList.remove('fit-contain', 'fit-stretch', 'fit-original');
+        video.classList.add(`fit-${state.scalingMode}`);
+      }
+      const labels = { fit: 'Fit', stretch: 'Stretch', original: '1:1' };
+      if (label) label.textContent = labels[state.scalingMode] || 'Fit';
+      showToast(`Display scaling: ${labels[state.scalingMode]}`, 'info');
     });
 
-    // 11. Fullscreen Toggle
-    on($('btnFullscreen'), 'click', () => {
+    // 11. Fullscreen Toggle with Keyboard Lock API
+    on($('btnFullscreen'), 'click', async () => {
       const elem = $('sessionView');
       if (!document.fullscreenElement) {
-        elem.requestFullscreen().catch(() => {});
+        try {
+          await elem.requestFullscreen();
+          if (navigator.keyboard && navigator.keyboard.lock) {
+            navigator.keyboard.lock(['Escape', 'AltLeft', 'AltRight', 'Tab', 'KeyW', 'KeyS']).catch(() => {});
+          }
+        } catch (e) {}
       } else {
-        document.exitFullscreen().catch(() => {});
+        try {
+          if (navigator.keyboard && navigator.keyboard.unlock) {
+            navigator.keyboard.unlock();
+          }
+          await document.exitFullscreen();
+        } catch (e) {}
       }
     });
 
@@ -1897,10 +2377,11 @@
       state.isDrawerOpen = false;
     });
 
-    // 15. Drawer Tabs Switcher (Chat & Clipboard)
+    // 15. Drawer Tabs Switcher (Chat, Clipboard, Files)
     const tabs = [
       { btn: 'tabBtnChat', pane: 'tabPaneChat' },
-      { btn: 'tabBtnClipboard', pane: 'tabPaneClipboard' }
+      { btn: 'tabBtnClipboard', pane: 'tabPaneClipboard' },
+      { btn: 'tabBtnFiles', pane: 'tabPaneFiles' }
     ];
     tabs.forEach(tab => {
       on($(tab.btn), 'click', () => {
@@ -1912,6 +2393,70 @@
         });
       });
     });
+
+    // File Transfer Picker & Drag-and-Drop
+    on($('filePickerInput'), 'change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        sendFileOverDataChannel(e.target.files[0]);
+        e.target.value = '';
+      }
+    });
+
+    const dropZone = $('fileDropZone');
+    if (dropZone) {
+      ['dragenter', 'dragover'].forEach(name => {
+        dropZone.addEventListener(name, (e) => {
+          e.preventDefault();
+          dropZone.classList.add('drag-active');
+        });
+      });
+      ['dragleave', 'drop'].forEach(name => {
+        dropZone.addEventListener(name, (e) => {
+          e.preventDefault();
+          dropZone.classList.remove('drag-active');
+        });
+      });
+      dropZone.addEventListener('drop', (e) => {
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+          sendFileOverDataChannel(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    // Unattended Access PIN Toggle & Input
+    const unattendedToggle = $('unattendedToggle');
+    const unattendedPinInput = $('unattendedPinInput');
+    const unattendedBox = $('unattendedPinBox');
+    if (unattendedToggle) {
+      on(unattendedToggle, 'change', (e) => {
+        state.unattendedEnabled = e.target.checked;
+        if (unattendedBox) unattendedBox.classList.toggle('hidden', !state.unattendedEnabled);
+        if (state.unattendedEnabled && unattendedPinInput) {
+          unattendedPinInput.focus();
+        }
+      });
+    }
+    if (unattendedPinInput) {
+      on(unattendedPinInput, 'input', (e) => {
+        state.unattendedPin = e.target.value.trim();
+        sessionStorage.setItem('omnicast_unattended_pin', state.unattendedPin);
+      });
+      if (state.unattendedPin) {
+        unattendedPinInput.value = state.unattendedPin;
+      }
+    }
+
+    // Granular Permissions Checkboxes
+    const permAudio = $('permAudio');
+    if (permAudio) on(permAudio, 'change', (e) => { state.permissions.allowAudio = e.target.checked; });
+    const permPointer = $('permPointer');
+    if (permPointer) on(permPointer, 'change', (e) => { state.permissions.allowPointer = e.target.checked; });
+    const permClipboard = $('permClipboard');
+    if (permClipboard) on(permClipboard, 'change', (e) => { state.permissions.allowClipboard = e.target.checked; });
+    const permFileTransfer = $('permFileTransfer');
+    if (permFileTransfer) on(permFileTransfer, 'change', (e) => { state.permissions.allowFileTransfer = e.target.checked; });
+    const permNative = $('permNativeControl');
+    if (permNative) on(permNative, 'change', (e) => { state.permissions.nativeOsControl = e.target.checked; });
 
     // 16. Chat Form Submit
     on($('chatForm'), 'submit', (e) => {
