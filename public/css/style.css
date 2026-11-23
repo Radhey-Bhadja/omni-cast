@@ -956,6 +956,35 @@ input:checked + .slider:before {
   pointer-events: none;
 }
 
+/* Restore Toolbar Floating Pill (Visible when toolbar is hidden) */
+.toolbar-restore-pill {
+  position: absolute;
+  top: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 81;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text-main);
+  border: 1px solid var(--border-card);
+  border-radius: 9999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(15, 23, 42, 0.15);
+  backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.toolbar-restore-pill:hover {
+  background: #ffffff;
+  transform: translateX(-50%) translateY(2px);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.2);
+}
+
 /* Live Stats Pill */
 .stats-pill {
   display: inline-flex;
@@ -1647,4 +1676,156 @@ input:checked + .slider:before {
 @keyframes slideUp {
   from { opacity: 0; transform: translate(-50%, 15px); }
   to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ==========================================================================
+   Comprehensive Responsive Layouts & High-Density Display Adaptations
+   ========================================================================== */
+
+/* Laptop & Tablet Displays (under 1200px) */
+@media (max-width: 1200px) {
+  .floating-top-toolbar {
+    gap: 0.45rem;
+    padding: 0.4rem 0.65rem;
+  }
+  .tool-btn span,
+  .btn-record span:not(.rec-dot),
+  .btn-disconnect span {
+    display: none;
+  }
+  .tool-btn {
+    padding: 0.45rem 0.6rem;
+  }
+  .btn-disconnect {
+    padding: 0.45rem 0.8rem;
+  }
+  .stats-pill {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.75rem;
+    gap: 0.4rem;
+  }
+  #statBitrate, #statRes {
+    display: none;
+  }
+  .stats-pill span:nth-of-type(5),
+  .stats-pill span:nth-of-type(6) {
+    display: none;
+  }
+}
+
+/* Tablets (under 900px) */
+@media (max-width: 900px) {
+  .cards-wrapper {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+  .side-drawer {
+    width: 340px;
+    max-width: 90vw;
+  }
+}
+
+/* Mobile & Small Tablets (under 768px) */
+@media (max-width: 768px) {
+  .floating-top-toolbar {
+    top: 0.5rem;
+    max-width: 96vw;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    border-radius: 14px;
+    padding: 0.35rem 0.5rem;
+    gap: 0.35rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  }
+  .floating-top-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+  .quality-select {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.72rem;
+  }
+  .stats-pill {
+    padding: 0.25rem 0.45rem;
+    font-size: 0.72rem;
+  }
+  .stats-pill span:nth-of-type(3),
+  .stats-pill span:nth-of-type(4) {
+    display: none;
+  }
+}
+
+/* Mobile Phones (under 640px) */
+@media (max-width: 640px) {
+  .main-view {
+    padding: 1rem 0.75rem;
+  }
+  .action-card {
+    padding: 1.25rem 1rem;
+    border-radius: 14px;
+  }
+  .card-title {
+    font-size: 1.15rem;
+  }
+  .card-subtitle {
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+  }
+  .code-display-box {
+    padding: 0.85rem 0.75rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .code-number {
+    font-size: 1.35rem;
+    letter-spacing: 0.05em;
+    width: 100%;
+    text-align: center;
+  }
+  .btn-copy {
+    width: 100%;
+    justify-content: center;
+    padding: 0.55rem 1rem;
+  }
+  .permissions-panel {
+    padding: 1.25rem 1rem;
+  }
+  .permissions-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+  .recent-sessions-panel {
+    padding: 1.25rem 1rem;
+  }
+  .side-drawer {
+    width: 100%;
+    max-width: 100vw;
+  }
+  .modal-card {
+    padding: 1.5rem 1.25rem;
+    max-width: 94vw;
+    border-radius: 16px;
+  }
+  .keys-popover {
+    width: 260px;
+    max-width: 90vw;
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+  .toast-container {
+    right: 1rem;
+    left: 1rem;
+    bottom: 1rem;
+  }
+  .toast {
+    font-size: 0.8rem;
+    padding: 0.65rem 0.9rem;
+  }
 }

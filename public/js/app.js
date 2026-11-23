@@ -191,15 +191,20 @@
     laserCtx = canvas.getContext('2d');
     resizeLaserCanvas();
     window.addEventListener('resize', resizeLaserCanvas);
+    window.addEventListener('orientationchange', resizeLaserCanvas);
     requestAnimationFrame(renderLaserLoop);
   }
 
   function resizeLaserCanvas() {
     const canvas = $('laserCanvas');
     const container = $('videoContainer');
-    if (!canvas || !container) return;
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
+    if (!canvas) return;
+    const w = (container && container.clientWidth > 0) ? container.clientWidth : window.innerWidth;
+    const h = (container && container.clientHeight > 0) ? container.clientHeight : window.innerHeight;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
   }
 
   function addClickRipple(x, y, color = '#ef4444') {
@@ -208,7 +213,15 @@
 
   function renderLaserLoop() {
     if (laserCtx) {
-      laserCtx.clearRect(0, 0, laserCtx.canvas.width, laserCtx.canvas.height);
+      const canvas = laserCtx.canvas;
+      const targetW = window.innerWidth;
+      const targetH = window.innerHeight;
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      laserCtx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Render expanding click ripples
       for (let i = ripples.length - 1; i >= 0; i--) {
@@ -226,7 +239,7 @@
         if (r.alpha <= 0) ripples.splice(i, 1);
       }
 
-      // Render laser dot when active in laser mode
+      // Render laser dot when active in laser mode across every pixel of screen
       if (state.mode === 'laser' && state.laserX >= 0 && state.laserY >= 0) {
         const rad = 7;
         const grad = laserCtx.createRadialGradient(state.laserX, state.laserY, 1, state.laserX, state.laserY, rad * 2.5);
@@ -258,6 +271,9 @@
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       gain.gain.value = 0.0001; // Inaudible keepalive tone
@@ -265,14 +281,28 @@
       gain.connect(ctx.destination);
       osc.start();
       backgroundAudioKeepAlive = { ctx, osc };
+
+      // Keep screen and tab alive with Screen WakeLock if available
+      if ('wakeLock' in navigator && navigator.wakeLock.request) {
+        navigator.wakeLock.request('screen').then(lock => {
+          if (backgroundAudioKeepAlive) backgroundAudioKeepAlive.wakeLock = lock;
+        }).catch(() => {});
+      }
     } catch (e) {}
   }
 
   function stopBackgroundAudioKeepAlive() {
     try {
       if (backgroundAudioKeepAlive) {
-        backgroundAudioKeepAlive.osc.stop();
-        backgroundAudioKeepAlive.ctx.close();
+        if (backgroundAudioKeepAlive.osc) {
+          try { backgroundAudioKeepAlive.osc.stop(); } catch (e) {}
+        }
+        if (backgroundAudioKeepAlive.ctx) {
+          try { backgroundAudioKeepAlive.ctx.close(); } catch (e) {}
+        }
+        if (backgroundAudioKeepAlive.wakeLock) {
+          try { backgroundAudioKeepAlive.wakeLock.release(); } catch (e) {}
+        }
         backgroundAudioKeepAlive = null;
       }
     } catch (e) {}
@@ -380,7 +410,9 @@
       } catch (e) {}
     }
 
-    if (video.srcObject !== stream) {
+    // Force video element to bind stream cleanly
+    if (video.srcObject !== stream || video.videoWidth === 0) {
+      try { video.srcObject = null; } catch (e) {}
       video.srcObject = stream;
     }
 
@@ -397,13 +429,17 @@
         playPromise.then(() => {
           console.log('[OmniCast Video Play Success] Resolution:', video.videoWidth, 'x', video.videoHeight);
           hideConnectingLoader();
+          resizeLaserCanvas();
           if (video.videoWidth > 0 && video.videoHeight > 0) {
             updateResolutionStat(video.videoWidth, video.videoHeight);
           }
         }).catch(err => {
           console.warn('[OmniCast Autoplay paused, waiting for gesture]', err.message);
           const unlock = () => {
-            video.play().then(() => hideConnectingLoader()).catch(() => {});
+            video.play().then(() => {
+              hideConnectingLoader();
+              resizeLaserCanvas();
+            }).catch(() => {});
             window.removeEventListener('click', unlock);
             window.removeEventListener('keydown', unlock);
             window.removeEventListener('touchstart', unlock);
@@ -417,6 +453,7 @@
 
     video.onloadedmetadata = () => {
       console.log('[Video LoadedMetadata]', video.videoWidth, 'x', video.videoHeight);
+      resizeLaserCanvas();
       forcePlayVideo();
     };
 
@@ -426,12 +463,14 @@
 
     video.onplaying = () => {
       hideConnectingLoader();
+      resizeLaserCanvas();
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         updateResolutionStat(video.videoWidth, video.videoHeight);
       }
     };
 
     video.onresize = () => {
+      resizeLaserCanvas();
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         updateResolutionStat(video.videoWidth, video.videoHeight);
       }
@@ -454,12 +493,36 @@
         e.track.enabled = true;
         e.track.onunmute = () => forcePlayVideo();
       }
-      if (video.srcObject !== stream) video.srcObject = stream;
+      try { video.srcObject = null; } catch (err) {}
+      video.srcObject = stream;
       forcePlayVideo();
     };
 
     // Immediate playback kick-off
     forcePlayVideo();
+
+    // Active Watchdog: verify stream frame rendering within 1.5s
+    if (state.streamWatchdog) clearTimeout(state.streamWatchdog);
+    state.streamWatchdog = setTimeout(() => {
+      if (video && (video.videoWidth === 0 || video.paused)) {
+        console.warn('[OmniCast Watchdog] Re-checking receiver tracks...');
+        if (state.activeCall && state.activeCall.peerConnection) {
+          try {
+            const receivers = state.activeCall.peerConnection.getReceivers();
+            const vTrack = receivers.find(r => r.track && r.track.kind === 'video' && r.track.readyState !== 'ended');
+            if (vTrack && vTrack.track) {
+              vTrack.track.enabled = true;
+              const freshStream = new MediaStream([vTrack.track]);
+              const aTrack = receivers.find(r => r.track && r.track.kind === 'audio' && r.track.readyState !== 'ended');
+              if (aTrack && aTrack.track) freshStream.addTrack(aTrack.track);
+              video.srcObject = null;
+              video.srcObject = freshStream;
+              video.play().catch(() => {});
+            }
+          } catch (e) {}
+        }
+      }
+    }, 1500);
 
     hideConnectingLoader();
     sound.success();
@@ -793,17 +856,16 @@
     try {
       showToast('Select screen or window to share with partner...', 'info');
 
-      // Standard screen capture options (prioritize monitor displaySurface)
+      // Standard screen capture options
       let stream;
       try {
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
             cursor: 'always',
-            displaySurface: 'monitor',
             frameRate: { ideal: 60, max: 60 }
           },
           audio: state.permissions.allowAudio,
-          selfBrowserSurface: 'exclude',
+          selfBrowserSurface: 'include',
           surfaceSwitching: 'include'
         });
       } catch (e1) {
@@ -813,9 +875,9 @@
           }
           return;
         }
-        // Fallback without displaySurface or audio constraints
+        // Fallback with minimal video constraints
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
+          video: true,
           audio: false
         });
       }
@@ -886,6 +948,19 @@
 
     if (clean === state.myCode) {
       showToast('Cannot connect to your own desk from the same browser tab.', 'error');
+      return;
+    }
+
+    if (!state.peer || !state.peer.open) {
+      showToast('Connecting to network broker... Retrying in 1s', 'info');
+      initPeer();
+      setTimeout(() => {
+        if (state.peer && state.peer.open) {
+          requestConnectionToRemote(rawTargetCode);
+        } else {
+          showToast('Network broker still connecting. Please click Connect again.', 'info');
+        }
+      }, 1000);
       return;
     }
 
@@ -1270,6 +1345,11 @@
     if (!container || !video) return;
 
     function getRelativeCoordinates(e) {
+      const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX :
+                      (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX : e.clientX;
+      const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY :
+                      (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientY : e.clientY;
+
       const rect = video.getBoundingClientRect();
       const vWidth = video.videoWidth || rect.width;
       const vHeight = video.videoHeight || rect.height;
@@ -1298,9 +1378,6 @@
         }
       }
 
-      const clientX = e.clientX;
-      const clientY = e.clientY;
-
       const relX = clientX - (rect.left + offsetX);
       const relY = clientY - (rect.top + offsetY);
 
@@ -1313,8 +1390,8 @@
       return {
         pctX: Math.max(0, Math.min(1, +pctX.toFixed(5))),
         pctY: Math.max(0, Math.min(1, +pctY.toFixed(5))),
-        rawX: clientX - rect.left,
-        rawY: clientY - rect.top
+        clientX,
+        clientY
       };
     }
 
@@ -1384,6 +1461,63 @@
       });
     });
 
+    // Touch support for Mobile / Tablet touch interaction
+    container.addEventListener('touchstart', (e) => {
+      if (video && video.paused) {
+        video.play().catch(() => {});
+      }
+      if (!state.activeConn) return;
+      const coords = getRelativeCoordinates(e);
+
+      if (state.mode === 'laser') {
+        state.laserX = coords.clientX;
+        state.laserY = coords.clientY;
+      }
+      addClickRipple(coords.clientX, coords.clientY, state.mode === 'laser' ? '#ef4444' : '#38bdf8');
+
+      state.activeConn.send({
+        type: state.mode === 'laser' ? 'laser' : 'mouse-down',
+        button: 0,
+        x: coords.pctX,
+        y: coords.pctY
+      });
+    }, { passive: true });
+
+    container.addEventListener('touchmove', (e) => {
+      if (!state.activeConn) return;
+      const coords = getRelativeCoordinates(e);
+
+      if (state.mode === 'laser') {
+        state.laserX = coords.clientX;
+        state.laserY = coords.clientY;
+      }
+
+      const now = performance.now();
+      if (now - lastMoveTime < 16) return;
+      lastMoveTime = now;
+
+      state.activeConn.send({
+        type: state.mode === 'laser' ? 'laser' : 'mouse-move',
+        x: coords.pctX,
+        y: coords.pctY
+      });
+    }, { passive: true });
+
+    container.addEventListener('touchend', (e) => {
+      if (state.mode === 'laser') {
+        state.laserX = -1;
+        state.laserY = -1;
+      }
+      if (!state.activeConn) return;
+      const coords = getRelativeCoordinates(e);
+      state.activeConn.send({
+        type: 'mouse-up',
+        button: 0,
+        x: coords.pctX,
+        y: coords.pctY
+      });
+    }, { passive: true });
+
     container.addEventListener('wheel', (e) => {
       if (!state.activeConn) return;
       e.preventDefault();
@@ -1442,9 +1576,16 @@
     const screenY = pctY * window.innerHeight;
 
     cursor.style.transform = `translate(${screenX}px, ${screenY}px)`;
+    cursor.classList.toggle('cursor-laser-mode', isLaser);
+
+    const tag = $('remoteCursorTag');
+    if (tag) {
+      tag.textContent = isLaser ? '🔴 Laser' : 'Remote Partner';
+      tag.style.background = isLaser ? '#ef4444' : '#2563eb';
+    }
     const icon = cursor.querySelector('svg');
     if (icon) {
-      icon.setAttribute('fill', isLaser ? '#ef4444' : '#38bdf8');
+      icon.setAttribute('fill', isLaser ? '#ef4444' : '#2563eb');
     }
   }
 
@@ -1519,18 +1660,25 @@
   function setupAutoHidingToolbar() {
     const toolbar = $('sessionToolbar');
     const trigger = $('toolbarTriggerZone');
+    const restoreBtn = $('btnRestoreToolbar');
     if (!toolbar) return;
 
     let hideTimer = null;
 
     function showToolbar() {
       toolbar.classList.remove('toolbar-hidden');
+      if (restoreBtn) restoreBtn.classList.add('hidden');
       if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(() => {
         if (!state.isKeysPopoverOpen) {
           toolbar.classList.add('toolbar-hidden');
+          if (restoreBtn) restoreBtn.classList.remove('hidden');
         }
-      }, 3000);
+      }, 3500);
+    }
+
+    if (restoreBtn) {
+      restoreBtn.addEventListener('click', showToolbar);
     }
 
     window.addEventListener('mousemove', (e) => {
@@ -1538,6 +1686,12 @@
         showToolbar();
       }
     });
+
+    window.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches[0] && e.touches[0].clientY < 80) {
+        showToolbar();
+      }
+    }, { passive: true });
 
     if (trigger) {
       trigger.addEventListener('mouseenter', showToolbar);
@@ -1550,6 +1704,7 @@
       hideTimer = setTimeout(() => {
         if (!state.isKeysPopoverOpen) {
           toolbar.classList.add('toolbar-hidden');
+          if (restoreBtn) restoreBtn.classList.remove('hidden');
         }
       }, 2000);
     });
