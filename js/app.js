@@ -361,11 +361,24 @@
       return;
     }
 
-    console.log('[OmniCast] Attaching Remote Stream:', stream.id, 'Tracks:', stream.getTracks().map(t => `${t.kind}:${t.enabled}`).join(', '));
+    console.log('[OmniCast] Attaching Remote Stream:', stream.id, 'Tracks:', stream.getTracks().map(t => `${t.kind}:${t.enabled}:${t.readyState}`).join(', '));
     state.remoteStream = stream;
 
     const video = $('remoteVideo');
     if (!video) return;
+
+    // Check if stream is missing video track, try to recover from peer receivers
+    if (stream.getVideoTracks().length === 0 && state.activeCall && state.activeCall.peerConnection) {
+      try {
+        const receivers = state.activeCall.peerConnection.getReceivers();
+        const vRec = receivers.find(r => r.track && r.track.kind === 'video' && r.track.readyState !== 'ended');
+        if (vRec && vRec.track) {
+          vRec.track.enabled = true;
+          stream.addTrack(vRec.track);
+          console.log('[OmniCast Recovered Video Track from Receivers]', vRec.track.id);
+        }
+      } catch (e) {}
+    }
 
     if (video.srcObject !== stream) {
       video.srcObject = stream;
@@ -409,6 +422,19 @@
 
     video.oncanplay = () => {
       forcePlayVideo();
+    };
+
+    video.onplaying = () => {
+      hideConnectingLoader();
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        updateResolutionStat(video.videoWidth, video.videoHeight);
+      }
+    };
+
+    video.onresize = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        updateResolutionStat(video.videoWidth, video.videoHeight);
+      }
     };
 
     stream.getVideoTracks().forEach(track => {
@@ -504,20 +530,59 @@
           attachRemoteStream(call.remoteStream);
         }
 
-        // 4. Hook into underlying RTCPeerConnection ontrack event directly
+        // 4. Hook into underlying RTCPeerConnection and receiver tracks directly
+        const checkReceivers = () => {
+          if (!call.peerConnection || !call.peerConnection.getReceivers) return;
+          try {
+            const receivers = call.peerConnection.getReceivers();
+            const vReceiver = receivers.find(r => r.track && r.track.kind === 'video' && r.track.readyState !== 'ended');
+            if (vReceiver && vReceiver.track) {
+              vReceiver.track.enabled = true;
+              if (state.remoteStream) {
+                if (!state.remoteStream.getVideoTracks().some(t => t.id === vReceiver.track.id)) {
+                  console.log('[OmniCast Adding Video Track to Existing Stream]', vReceiver.track.id);
+                  state.remoteStream.addTrack(vReceiver.track);
+                  const v = $('remoteVideo');
+                  if (v) {
+                    if (v.srcObject !== state.remoteStream) v.srcObject = state.remoteStream;
+                    v.play().catch(() => {});
+                  }
+                }
+              } else {
+                console.log('[OmniCast Creating New Stream from Receiver Track]', vReceiver.track.id);
+                const newStream = new MediaStream([vReceiver.track]);
+                const aReceiver = receivers.find(r => r.track && r.track.kind === 'audio' && r.track.readyState !== 'ended');
+                if (aReceiver && aReceiver.track) newStream.addTrack(aReceiver.track);
+                attachRemoteStream(newStream);
+              }
+            }
+          } catch (e) {}
+        };
+
         const hookPCTracks = () => {
           if (call.peerConnection && !call.peerConnection._tracksHooked) {
             call.peerConnection._tracksHooked = true;
             call.peerConnection.addEventListener('track', (event) => {
               console.log('[Direct RTCPeerConnection track event]', event.track.kind);
+              event.track.enabled = true;
               const s = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
               attachRemoteStream(s);
             });
+            call.peerConnection.addEventListener('connectionstatechange', () => {
+              console.log('[RTCPeerConnection state]', call.peerConnection.connectionState);
+              if (call.peerConnection.connectionState === 'connected') {
+                checkReceivers();
+              }
+            });
           }
+          checkReceivers();
         };
+
         hookPCTracks();
         setTimeout(hookPCTracks, 50);
         setTimeout(hookPCTracks, 200);
+        setTimeout(hookPCTracks, 600);
+        setTimeout(hookPCTracks, 1200);
 
         call.on('close', () => {
           stopAllSessions('Partner closed remote desktop.');
@@ -755,6 +820,14 @@
         });
       }
 
+      if (!stream || stream.getVideoTracks().length === 0) {
+        showToast('No video track available from screen capture.', 'error');
+        if (state.activeConn) {
+          state.activeConn.send({ type: 'permission-denied', reason: 'Failed to capture host video track.' });
+        }
+        return;
+      }
+
       state.localStream = stream;
       state.isHost = true;
 
@@ -763,6 +836,7 @@
 
       const vTrack = stream.getVideoTracks()[0];
       if (vTrack) {
+        vTrack.enabled = true;
         if ('contentHint' in vTrack) vTrack.contentHint = 'motion';
         vTrack.onended = () => {
           stopAllSessions('You stopped sharing your screen.');
@@ -1197,17 +1271,57 @@
 
     function getRelativeCoordinates(e) {
       const rect = video.getBoundingClientRect();
+      const vWidth = video.videoWidth || rect.width;
+      const vHeight = video.videoHeight || rect.height;
+
+      let renderWidth = rect.width;
+      let renderHeight = rect.height;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (state.isFitContain && vWidth > 0 && vHeight > 0 && rect.width > 0 && rect.height > 0) {
+        const videoRatio = vWidth / vHeight;
+        const elemRatio = rect.width / rect.height;
+
+        if (elemRatio > videoRatio) {
+          // Viewport is wider than stream -> pillarboxed (black letterbox bars on left & right)
+          renderHeight = rect.height;
+          renderWidth = rect.height * videoRatio;
+          offsetX = (rect.width - renderWidth) / 2;
+          offsetY = 0;
+        } else {
+          // Viewport is taller than stream -> letterboxed (black letterbox bars on top & bottom)
+          renderWidth = rect.width;
+          renderHeight = rect.width / videoRatio;
+          offsetX = 0;
+          offsetY = (rect.height - renderHeight) / 2;
+        }
+      }
+
       const clientX = e.clientX;
       const clientY = e.clientY;
-      const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-      const y = Math.max(0, Math.min(rect.height, clientY - rect.top));
+
+      const relX = clientX - (rect.left + offsetX);
+      const relY = clientY - (rect.top + offsetY);
+
+      const clampedX = Math.max(0, Math.min(renderWidth, relX));
+      const clampedY = Math.max(0, Math.min(renderHeight, relY));
+
+      const pctX = renderWidth > 0 ? clampedX / renderWidth : 0;
+      const pctY = renderHeight > 0 ? clampedY / renderHeight : 0;
+
       return {
-        pctX: +(x / rect.width).toFixed(4),
-        pctY: +(y / rect.height).toFixed(4),
+        pctX: Math.max(0, Math.min(1, +pctX.toFixed(5))),
+        pctY: Math.max(0, Math.min(1, +pctY.toFixed(5))),
         rawX: clientX - rect.left,
         rawY: clientY - rect.top
       };
     }
+
+    // Prevent context menu on remote canvas so right clicks pass cleanly
+    container.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
 
     let lastMoveTime = 0;
     container.addEventListener('mousemove', (e) => {
@@ -1541,6 +1655,14 @@
         state.activeConn.send({ type: 'text-input', text: input.value });
         showToast('Text sent to remote computer!', 'success');
         input.value = '';
+      }
+    });
+
+    on($('textSenderInput'), 'keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const btn = $('btnSendTextToRemote');
+        if (btn) btn.click();
       }
     });
 

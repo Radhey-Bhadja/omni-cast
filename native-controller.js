@@ -149,6 +149,9 @@ while($line = [Console]::ReadLine()) {
                 [WinInputHelper]::keybd_event(0x09, 0, 0, [UIntPtr]::Zero) # Tab
                 [WinInputHelper]::keybd_event(0x09, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
                 [WinInputHelper]::keybd_event(0x12, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
+            } elseif ($action -eq "ESC") {
+                [WinInputHelper]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero) # Esc
+                [WinInputHelper]::keybd_event(0x1B, 0, $KEYEVENTF_KEYUP, [UIntPtr]::Zero)
             }
         }
         "TYPE_STR" {
@@ -209,16 +212,98 @@ while($line = [Console]::ReadLine()) {
     } catch (err) {}
   }
 
+  resolveVirtualKeyCode(payload) {
+    if (!payload) return null;
+    if (typeof payload.keyCode === 'number' && payload.keyCode > 0) {
+      return payload.keyCode;
+    }
+
+    const key = payload.key || '';
+    const code = payload.code || '';
+
+    // Direct named key map to Windows Virtual Key codes
+    const KEY_MAP = {
+      'Enter': 0x0D,
+      'Escape': 0x1B,
+      'Esc': 0x1B,
+      'Backspace': 0x08,
+      'Tab': 0x09,
+      'Space': 0x20,
+      ' ': 0x20,
+      'Delete': 0x2E,
+      'Del': 0x2E,
+      'Insert': 0x2D,
+      'Home': 0x24,
+      'End': 0x23,
+      'PageUp': 0x21,
+      'PageDown': 0x22,
+      'ArrowLeft': 0x25,
+      'ArrowUp': 0x26,
+      'ArrowRight': 0x27,
+      'ArrowDown': 0x28,
+      'CapsLock': 0x14,
+      'Control': 0x11,
+      'Shift': 0x10,
+      'Alt': 0x12,
+      'Meta': 0x5B,
+      'OS': 0x5B
+    };
+
+    if (KEY_MAP[key]) return KEY_MAP[key];
+
+    // Alphanumeric code parsing (e.g. 'KeyA', 'Digit1')
+    if (/^Key([A-Z])$/i.test(code)) {
+      return code.slice(3).toUpperCase().charCodeAt(0);
+    }
+    if (/^Digit([0-9])$/.test(code)) {
+      return code.slice(5).charCodeAt(0);
+    }
+    if (/^F([1-9]|1[0-2])$/i.test(key)) {
+      const fNum = parseInt(key.slice(1), 10);
+      return 0x70 + (fNum - 1);
+    }
+    if (/^Numpad([0-9])$/.test(code)) {
+      return 0x60 + parseInt(code.slice(6), 10);
+    }
+
+    // Single character fallback
+    if (key.length === 1) {
+      const upper = key.toUpperCase();
+      const codePoint = upper.charCodeAt(0);
+      if (codePoint >= 65 && codePoint <= 90) return codePoint; // A-Z
+      if (codePoint >= 48 && codePoint <= 57) return codePoint; // 0-9
+      if (key === '+') return 0xBB;
+      if (key === '-') return 0xBD;
+      if (key === ',') return 0xBC;
+      if (key === '.') return 0xBE;
+    }
+
+    return null;
+  }
+
   handleEvent(payload) {
     if (!payload || typeof payload !== 'object') return;
-    const { type } = payload;
+    const type = (payload.type || '').toLowerCase();
+
+    // Extract normalized coordinates (percentage [0..1] or pixel coordinates)
+    let px = undefined;
+    let py = undefined;
+    if (payload.xPercent !== undefined) {
+      px = payload.xPercent;
+    } else if (payload.x !== undefined && payload.x <= 1.0) {
+      px = payload.x;
+    }
+
+    if (payload.yPercent !== undefined) {
+      py = payload.yPercent;
+    } else if (payload.y !== undefined && payload.y <= 1.0) {
+      py = payload.y;
+    }
 
     switch (type) {
       case 'laser':
-        const lx = payload.xPercent !== undefined ? payload.xPercent : payload.x;
-        const ly = payload.yPercent !== undefined ? payload.yPercent : payload.y;
-        if (lx !== undefined && ly !== undefined) {
-          this.execute(`MOVE_PCT ${lx} ${ly}`);
+        if (px !== undefined && py !== undefined) {
+          this.execute(`MOVE_PCT ${px} ${py}`);
         }
         if (payload.click) {
           this.execute(`MDOWN 0`);
@@ -226,52 +311,63 @@ while($line = [Console]::ReadLine()) {
         }
         break;
 
+      case 'mouse-move':
       case 'mousemove':
-        if (payload.xPercent !== undefined && payload.yPercent !== undefined) {
-          this.execute(`MOVE_PCT ${payload.xPercent} ${payload.yPercent}`);
+        if (px !== undefined && py !== undefined) {
+          this.execute(`MOVE_PCT ${px} ${py}`);
         } else if (payload.x !== undefined && payload.y !== undefined) {
           this.execute(`MOVE ${Math.round(payload.x)} ${Math.round(payload.y)}`);
         }
         break;
 
+      case 'mouse-down':
       case 'mousedown':
-        if (payload.xPercent !== undefined && payload.yPercent !== undefined) {
-          this.execute(`MOVE_PCT ${payload.xPercent} ${payload.yPercent}`);
+        if (px !== undefined && py !== undefined) {
+          this.execute(`MOVE_PCT ${px} ${py}`);
         }
         this.execute(`MDOWN ${payload.button ?? 0}`);
         break;
 
+      case 'mouse-up':
       case 'mouseup':
-        if (payload.xPercent !== undefined && payload.yPercent !== undefined) {
-          this.execute(`MOVE_PCT ${payload.xPercent} ${payload.yPercent}`);
+      case 'mouse-click':
+        if (px !== undefined && py !== undefined) {
+          this.execute(`MOVE_PCT ${px} ${py}`);
         }
         this.execute(`MUP ${payload.button ?? 0}`);
         break;
 
       case 'dblclick':
-        if (payload.xPercent !== undefined && payload.yPercent !== undefined) {
-          this.execute(`MOVE_PCT ${payload.xPercent} ${payload.yPercent}`);
+      case 'double-click':
+        if (px !== undefined && py !== undefined) {
+          this.execute(`MOVE_PCT ${px} ${py}`);
         }
         this.execute(`DBLCLICK ${payload.button ?? 0}`);
         break;
 
+      case 'mouse-wheel':
       case 'wheel':
         const delta = Math.sign(payload.deltaY || 0) * -120;
         this.execute(`WHEEL ${delta}`);
         break;
 
+      case 'key-down':
       case 'keydown':
-        if (payload.keyCode) {
-          this.execute(`KDOWN ${payload.keyCode}`);
+        const vkDown = this.resolveVirtualKeyCode(payload);
+        if (vkDown !== null) {
+          this.execute(`KDOWN ${vkDown}`);
         }
         break;
 
+      case 'key-up':
       case 'keyup':
-        if (payload.keyCode) {
-          this.execute(`KUP ${payload.keyCode}`);
+        const vkUp = this.resolveVirtualKeyCode(payload);
+        if (vkUp !== null) {
+          this.execute(`KUP ${vkUp}`);
         }
         break;
 
+      case 'special-key':
       case 'special':
         const action = payload.key || payload.action;
         if (action) {
@@ -279,6 +375,7 @@ while($line = [Console]::ReadLine()) {
         }
         break;
 
+      case 'text-input':
       case 'type-string':
       case 'text':
         if (payload.text && typeof payload.text === 'string') {
