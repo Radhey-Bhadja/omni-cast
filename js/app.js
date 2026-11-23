@@ -1,12 +1,13 @@
 /**
- * OmniCast — 100% Functional WebRTC Remote Desktop (AnyDesk Grade)
- * Production & Vercel Live Ready — Full Mouse, Keyboard, Wheel, Special Keys & P2P Engine.
+ * OmniCast — Ultra-Low Latency WebRTC Remote Desktop (AnyDesk Grade)
+ * Full Mouse, Keyboard, Laser, Live WebRTC Stats, 16KB File Transfer,
+ * Shared Clipboard, MediaRecorder Screen Recording, and Host OS Bridge.
  */
 
 (() => {
   'use strict';
 
-  // Global Public Google & Twilio STUN servers + free TURN relay for cross-network WebRTC traversal
+  // Global Public Google STUN servers + Metered TURN relays for symmetric NAT traversal
   const PEER_CONFIG = {
     config: {
       iceServers: [
@@ -16,7 +17,6 @@
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
         { urls: 'stun:global.stun.twilio.com:3478' },
-        // Free TURN relay servers (OpenRelay by Metered) for symmetric NAT traversal
         {
           urls: 'turn:openrelay.metered.ca:80',
           username: 'openrelayproject',
@@ -38,22 +38,25 @@
     debug: 0
   };
 
-  const CHUNK_SIZE = 64 * 1024; // 64KB per file slice
+  // 16KB chunk size for ultra-smooth DataChannel packet delivery
+  const FILE_CHUNK_SIZE = 16 * 1024;
 
-  // Safe DOM Helper
+  // DOM Helpers
   const $ = (id) => document.getElementById(id);
   const on = (el, evt, fn, opts) => {
     if (el) el.addEventListener(evt, fn, opts);
   };
 
-  // Immediate Code Generation (Scoped per browser tab to allow flawless multi-tab testing)
+  // =========================================================================
+  // 9-Digit Session ID Generation & Formatting (e.g. 482 910 334)
+  // =========================================================================
   function getOrGenerateCode() {
     let saved = '';
     try {
       saved = sessionStorage.getItem('omnicast_my_code');
     } catch (e) {}
-    if (!saved || saved.length !== 6 || !/^\d{6}$/.test(saved)) {
-      saved = String(Math.floor(100000 + Math.random() * 900000));
+    if (!saved || saved.length !== 9 || !/^\d{9}$/.test(saved)) {
+      saved = String(Math.floor(100000000 + Math.random() * 900000000));
     }
     try {
       sessionStorage.setItem('omnicast_my_code', saved);
@@ -62,41 +65,76 @@
   }
 
   function formatDisplay(raw) {
-    if (!raw) return '--- ---';
-    const digits = String(raw).replace(/\D/g, '').slice(0, 6);
+    if (!raw) return '--- --- ---';
+    const digits = String(raw).replace(/\D/g, '').slice(0, 9);
     if (digits.length <= 3) return digits;
-    return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+    if (digits.length <= 6) return `${digits.slice(0, 3)} ${digits.slice(3)}`;
+    return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
   }
 
   function cleanDigits(str) {
-    return String(str || '').replace(/\D/g, '').slice(0, 6);
+    return String(str || '').replace(/\D/g, '').slice(0, 9);
   }
 
+  // =========================================================================
   // Application State
+  // =========================================================================
   const state = {
     peer: null,
     myCode: getOrGenerateCode(),
     targetCode: null,
     isHost: false,
-    activeConn: null, // RTCDataConnection
-    activeCall: null, // MediaConnection
-    localStream: null, // Host Screen MediaStream
-    remoteStream: null, // Viewer Remote MediaStream
-    incomingFile: null,
-    unreadChatCount: 0,
-    isChatOpen: false,
-    isKeysOpen: false,
-    mode: 'control', // 'control' | 'laser'
-    pingInterval: null,
-    connectTimeoutTimer: null,
-    lastMouseMoveTime: 0,
+    activeConn: null,       // RTCDataConnection
+    activeCall: null,       // MediaConnection
+    localStream: null,      // Host Screen MediaStream
+    remoteStream: null,     // Viewer Remote MediaStream
+    mode: 'control',        // 'control' | 'laser'
+    isMuted: true,
+    isFitContain: true,
     hasServerApi: false,
-    reconnectTimer: null,
-    isMouseDown: false,
-    isConnecting: false
+    unreadMessages: 0,
+    isDrawerOpen: false,
+    isKeysPopoverOpen: false,
+    
+    // Authorization Modal Countdown
+    authCountdownTimer: null,
+    authSecondsRemaining: 30,
+    pendingCallerCode: null,
+    pendingClientInfo: null,
+    pendingPermissions: null,
+
+    // Permissions
+    permissions: {
+      allowAudio: true,
+      allowPointer: true,
+      allowFiles: true,
+      allowClipboard: true,
+      nativeOsControl: true
+    },
+
+    // WebRTC Stats Polling
+    statsInterval: null,
+    prevBytesReceived: 0,
+    prevTimestamp: 0,
+
+    // Screen Recording
+    mediaRecorder: null,
+    recordedChunks: [],
+    isRecording: false,
+    recordingTimer: null,
+    recordingSeconds: 0,
+
+    // File Transfer State (Receiving)
+    incomingTransfers: new Map(), // transferId -> { name, size, totalChunks, receivedChunks, chunks: [] }
+    activeUploads: new Map(),
+
+    // Shared Clipboard
+    sharedClipboardText: ''
   };
 
-  // Sound Engine (Web Audio API)
+  // =========================================================================
+  // Web Audio Sound Engine
+  // =========================================================================
   const sound = {
     ctx: null,
     play(freq, dur) {
@@ -130,7 +168,7 @@
     }
   };
 
-  // Toast Alerts
+  // Toast Notification System
   function showToast(message, type = 'info') {
     const container = $('toastContainer');
     if (!container) return;
@@ -140,16 +178,16 @@
     container.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
-      toast.style.transform = 'translateY(-10px)';
+      toast.style.transform = 'translateY(12px)';
       setTimeout(() => toast.remove(), 250);
     }, 3500);
   }
 
+  // =========================================================================
   // Laser Pointer Engine
+  // =========================================================================
   let laserCtx = null;
   let ripples = [];
-  let laserPoint = null;
-  let animFrameId = null;
 
   function initLaserCanvas() {
     const canvas = $('laserCanvas');
@@ -157,343 +195,234 @@
     laserCtx = canvas.getContext('2d');
     resizeLaserCanvas();
     window.addEventListener('resize', resizeLaserCanvas);
-    startLaserLoop();
+    requestAnimationFrame(renderLaserLoop);
   }
 
   function resizeLaserCanvas() {
     const canvas = $('laserCanvas');
-    if (!canvas) return;
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
-
-  function startLaserLoop() {
-    if (animFrameId) cancelAnimationFrame(animFrameId);
-    function loop() {
-      renderLaser();
-      animFrameId = requestAnimationFrame(loop);
-    }
-    animFrameId = requestAnimationFrame(loop);
-  }
-
-  function getVideoRenderMetrics() {
     const video = $('remoteVideo');
-    if (!video) return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
-    const rect = video.getBoundingClientRect();
-    if (video.classList.contains('fit-stretch') || !video.videoWidth || !video.videoHeight) {
-      return { x: rect.left, y: rect.top, w: rect.width, h: rect.height };
-    }
-    const videoAspect = video.videoWidth / video.videoHeight;
-    const containerAspect = rect.width / rect.height;
-    let w, h, x, y;
-    if (containerAspect > videoAspect) {
-      h = rect.height;
-      w = h * videoAspect;
-      x = rect.left + (rect.width - w) / 2;
-      y = rect.top;
-    } else {
-      w = rect.width;
-      h = w / videoAspect;
-      x = rect.left;
-      y = rect.top + (rect.height - h) / 2;
-    }
-    return { x, y, w, h };
+    if (!canvas || !video) return;
+    canvas.width = canvas.parentElement.clientWidth;
+    canvas.height = canvas.parentElement.clientHeight;
   }
 
-  function renderLaser() {
-    const canvas = $('laserCanvas');
-    if (!laserCtx || !canvas) return;
-    laserCtx.clearRect(0, 0, canvas.width, canvas.height);
+  function addClickRipple(x, y, color = '#ef4444') {
+    ripples.push({ x, y, radius: 4, alpha: 0.9, color });
+  }
 
-    const m = getVideoRenderMetrics();
+  function renderLaserLoop() {
+    if (laserCtx) {
+      laserCtx.clearRect(0, 0, laserCtx.canvas.width, laserCtx.canvas.height);
 
-    if (laserPoint && (Date.now() - laserPoint.time < 3000)) {
-      const x = m.x + (laserPoint.x * m.w);
-      const y = m.y + (laserPoint.y * m.h);
+      // Render expanding click ripples
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const r = ripples[i];
+        laserCtx.beginPath();
+        laserCtx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+        laserCtx.strokeStyle = r.color;
+        laserCtx.lineWidth = 2.5;
+        laserCtx.globalAlpha = r.alpha;
+        laserCtx.stroke();
+        laserCtx.globalAlpha = 1.0;
 
-      const radGrad = laserCtx.createRadialGradient(x, y, 0, x, y, 22);
-      radGrad.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
-      radGrad.addColorStop(0.4, 'rgba(239, 68, 68, 0.4)');
-      radGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-      laserCtx.fillStyle = radGrad;
-      laserCtx.beginPath();
-      laserCtx.arc(x, y, 22, 0, Math.PI * 2);
-      laserCtx.fill();
-
-      laserCtx.fillStyle = '#ffffff';
-      laserCtx.beginPath();
-      laserCtx.arc(x, y, 4, 0, Math.PI * 2);
-      laserCtx.fill();
-    }
-
-    const now = Date.now();
-    for (let i = ripples.length - 1; i >= 0; i--) {
-      const r = ripples[i];
-      const progress = (now - r.start) / 600;
-      if (progress >= 1) {
-        ripples.splice(i, 1);
-        continue;
+        r.radius += 2.2;
+        r.alpha -= 0.04;
+        if (r.alpha <= 0) ripples.splice(i, 1);
       }
-      const radius = 6 + progress * 32;
-      const alpha = (1 - progress) * 0.8;
-      const x = m.x + (r.x * m.w);
-      const y = m.y + (r.y * m.h);
-
-      laserCtx.strokeStyle = `rgba(239, 68, 68, ${alpha})`;
-      laserCtx.lineWidth = 2.5 * (1 - progress);
-      laserCtx.beginPath();
-      laserCtx.arc(x, y, radius, 0, Math.PI * 2);
-      laserCtx.stroke();
     }
+    requestAnimationFrame(renderLaserLoop);
   }
 
-  function triggerLaserRipple(normX, normY) {
-    ripples.push({ x: normX, y: normY, start: Date.now() });
-  }
-
-  // Local Host Input Server check (if running via server.js)
-  async function checkLocalInputServer(retries = 10) {
+  // =========================================================================
+  // Background Audio KeepAlive (Prevents Browser Occlusion Freezing)
+  // =========================================================================
+  let backgroundAudioKeepAlive = null;
+  function startBackgroundAudioKeepAlive() {
     try {
-      const res = await fetch('/api/status', { method: 'GET' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && (data.osControlAvailable || data.status === 'online')) {
-          state.hasServerApi = true;
-          console.log('[OmniCast] Local Server Bridge Detected:', data);
-          return;
-        }
+      if (backgroundAudioKeepAlive) return;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0001; // Inaudible
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      backgroundAudioKeepAlive = { ctx, osc };
+    } catch (e) {}
+  }
+
+  function stopBackgroundAudioKeepAlive() {
+    try {
+      if (backgroundAudioKeepAlive) {
+        backgroundAudioKeepAlive.osc.stop();
+        backgroundAudioKeepAlive.ctx.close();
+        backgroundAudioKeepAlive = null;
       }
-    } catch (e) {
-      // not on localhost / serverless
-    }
-    if (retries > 0) {
-      setTimeout(() => checkLocalInputServer(retries - 1), 1000);
-    }
+    } catch (e) {}
   }
 
-  function relayToNativeHost(event) {
-    if (!state.isHost) return;
-    if (window.location.protocol.startsWith('http')) {
-      fetch('/api/host-input', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event })
-      }).then(() => {
-        state.hasServerApi = true;
-      }).catch(() => {});
-    }
-  }
-
-  // Recent Connections
-  function getRecentConnections() {
+  // =========================================================================
+  // Recent Sessions Manager (localStorage)
+  // =========================================================================
+  function getRecentSessions() {
     try {
-      const stored = localStorage.getItem('omnicast_recents');
-      return stored ? JSON.parse(stored) : [];
+      const data = localStorage.getItem('omnicast_recent_sessions');
+      return data ? JSON.parse(data) : [];
     } catch (e) {
       return [];
     }
   }
 
-  function saveRecentConnection(code) {
-    if (!code || code.length !== 6) return;
-    let recents = getRecentConnections().filter(c => c !== code);
-    recents.unshift(code);
-    recents = recents.slice(0, 4);
+  function saveRecentSession(code) {
+    if (!code) return;
+    const clean = cleanDigits(code);
+    if (clean.length !== 9) return;
     try {
-      localStorage.setItem('omnicast_recents', JSON.stringify(recents));
+      let recents = getRecentSessions().filter(item => item.id !== clean);
+      recents.unshift({ id: clean, timestamp: Date.now() });
+      if (recents.length > 8) recents = recents.slice(0, 8);
+      localStorage.setItem('omnicast_recent_sessions', JSON.stringify(recents));
+      renderRecentSessions();
     } catch (e) {}
-    renderRecentChips();
   }
 
-  function renderRecentChips() {
-    const chipsContainer = $('recentChips');
-    const wrap = $('recentContainer');
-    if (!chipsContainer || !wrap) return;
-    const recents = getRecentConnections();
-    chipsContainer.innerHTML = '';
+  function renderRecentSessions() {
+    const listEl = $('recentSessionsList');
+    if (!listEl) return;
+    const recents = getRecentSessions();
     if (recents.length === 0) {
-      wrap.classList.add('hidden');
+      listEl.innerHTML = `<div class="recent-empty">No recent connections yet. Past sessions will appear here for fast reconnect.</div>`;
       return;
     }
-    wrap.classList.remove('hidden');
-    recents.forEach(code => {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'recent-chip';
-      chip.textContent = formatDisplay(code);
-      chip.title = `Connect to ${formatDisplay(code)}`;
-      chip.addEventListener('click', () => {
+
+    listEl.innerHTML = recents.map(item => {
+      const timeStr = getTimeAgo(item.timestamp);
+      const formatted = formatDisplay(item.id);
+      return `
+        <div class="recent-card">
+          <div class="recent-card-info">
+            <div class="recent-icon-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+            </div>
+            <div>
+              <div class="recent-id">${formatted}</div>
+              <div class="recent-time">${timeStr}</div>
+            </div>
+          </div>
+          <button class="btn-quick-connect" data-code="${item.id}" type="button">Connect</button>
+        </div>
+      `;
+    }).join('');
+
+    // Attach click listeners to fast reconnect buttons
+    listEl.querySelectorAll('.btn-quick-connect').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const code = e.currentTarget.getAttribute('data-code');
         const input = $('targetCodeInput');
-        if (input) input.value = formatDisplay(code);
-        startConnect();
+        if (input) {
+          input.value = formatDisplay(code);
+          const form = $('connectForm');
+          if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
+        }
       });
-      chipsContainer.appendChild(chip);
     });
   }
 
-  // Ping Monitor
-  function startPingHeartbeat() {
-    stopPingHeartbeat();
-    state.pingInterval = setInterval(() => {
-      if (state.activeConn && state.activeConn.open) {
-        state.activeConn.send({ type: 'ping', t: Date.now() });
-      }
-    }, 2000);
-  }
-
-  function stopPingHeartbeat() {
-    if (state.pingInterval) {
-      clearInterval(state.pingInterval);
-      state.pingInterval = null;
-    }
-    const pingEl = $('sessionPing');
-    if (pingEl) pingEl.textContent = '-- ms';
-  }
-
-  // Host Key HUD Notification
-  let hudTimer = null;
-  function showHostKeyHUD(text) {
-    const hud = $('hostKeyHUD');
-    const hudText = $('hostKeyHUDText');
-    if (!hud || !hudText) return;
-    hudText.textContent = text;
-    hud.classList.remove('hidden');
-    if (hudTimer) clearTimeout(hudTimer);
-    hudTimer = setTimeout(() => {
-      hud.classList.add('hidden');
-    }, 1400);
+  function getTimeAgo(ts) {
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
   }
 
   // =========================================================================
-  // Initialize PeerJS
+  // PeerJS WebRTC Initialization
   // =========================================================================
   function initPeer() {
-    const codeDisplay = $('myCodeDisplay');
-    if (codeDisplay) {
-      codeDisplay.textContent = formatDisplay(state.myCode);
-    }
-
-    const statusLabel = $('statusLabel');
-    const connectionStatus = $('connectionStatus');
-    if (statusLabel) statusLabel.textContent = 'Connecting to network...';
-    if (connectionStatus) connectionStatus.className = 'status-badge status-connecting';
-
-    if (state.peer) {
-      try { state.peer.destroy(); } catch (e) {}
-      state.peer = null;
-    }
-
     if (typeof Peer === 'undefined') {
-      console.warn('[OmniCast] Waiting for PeerJS to load...');
-      setTimeout(initPeer, 500);
+      setTimeout(initPeer, 200);
       return;
     }
 
     try {
+      if (state.peer) {
+        try { state.peer.destroy(); } catch (e) {}
+      }
+
       state.peer = new Peer('omni-' + state.myCode, PEER_CONFIG);
 
       state.peer.on('open', (id) => {
-        console.log('[OmniCast Peer Open]', id);
-        if (statusLabel) statusLabel.textContent = 'Ready for incoming connections';
-        if (connectionStatus) connectionStatus.className = 'status-badge status-online';
-      });
-
-      state.peer.on('disconnected', () => {
-        console.warn('[PeerJS] Disconnected from signaling server. Reconnecting...');
-        if (statusLabel) statusLabel.textContent = 'Reconnecting...';
-        if (connectionStatus) connectionStatus.className = 'status-badge status-connecting';
-        if (state.peer && !state.peer.destroyed) {
-          state.peer.reconnect();
-        }
+        console.log('[OmniCast Peer Open] ID:', id);
+        updateStatusBadge('Network Ready', 'ready');
       });
 
       state.peer.on('error', (err) => {
-        console.warn('[PeerJS Error]', err.type, err.message);
+        console.warn('[OmniCast Peer Error]', err.type, err.message);
         if (err.type === 'unavailable-id') {
-          const fresh = String(Math.floor(100000 + Math.random() * 900000));
-          state.myCode = fresh;
-          try {
-            sessionStorage.setItem('omnicast_my_code', fresh);
-          } catch (e) {}
-          if (codeDisplay) codeDisplay.textContent = formatDisplay(fresh);
-          initPeer();
+          // If code collision occurs, regenerate new 9-digit code
+          state.myCode = String(Math.floor(100000000 + Math.random() * 900000000));
+          sessionStorage.setItem('omnicast_my_code', state.myCode);
+          updateCodeDisplay();
+          setTimeout(initPeer, 300);
         } else if (err.type === 'peer-unavailable') {
-          showToast('That Desk Code is currently offline. Ensure partner has OmniCast open!', 'error');
-          resetConnectButton();
-          if (statusLabel) statusLabel.textContent = 'Ready for incoming connections';
-        } else if (err.type === 'network' || err.type === 'server-error') {
-          if (statusLabel) statusLabel.textContent = 'Reconnecting...';
-          if (connectionStatus) connectionStatus.className = 'status-badge status-connecting';
-          if (!state.reconnectTimer) {
-            state.reconnectTimer = setTimeout(() => {
-              state.reconnectTimer = null;
-              initPeer();
-            }, 3000);
-          }
+          hideConnectingLoader();
+          showToast('Remote desk is offline or invalid ID.', 'error');
+        } else {
+          showToast(`Connection alert: ${err.type || 'network issue'}`, 'error');
         }
       });
 
-      // HOST: Listen for incoming connection
+      // INCOMING DATA CONNECTION (Host receives viewer request)
       state.peer.on('connection', (conn) => {
-        console.log('[Incoming Connection from]', conn.peer);
+        console.log('[OmniCast Incoming DataConnection]', conn.peer);
         state.activeConn = conn;
         listenToDataChannel(conn);
       });
 
-      // VIEWER: Listen for incoming stream call from Host
+      // INCOMING MEDIA CALL (Viewer answers host stream)
       state.peer.on('call', (call) => {
-        console.log('[Incoming Screen Call from]', call.peer);
+        console.log('[OmniCast Incoming MediaCall]', call.peer);
         state.activeCall = call;
 
-        function attachRemoteStream(stream) {
-          if (!stream) return;
-          console.log('[Stream Received on Viewer]', stream.id, 'Tracks:', stream.getTracks().length);
+        const attachRemoteStream = (stream) => {
+          console.log('[OmniCast Remote Stream Received]', stream.id);
           state.remoteStream = stream;
-          state.isConnecting = false;
-          if (state.connectTimeoutTimer) {
-            clearTimeout(state.connectTimeoutTimer);
-            state.connectTimeoutTimer = null;
-          }
-
           const video = $('remoteVideo');
           if (video) {
-            video.muted = true;
-            video.defaultMuted = true;
-            video.playsInline = true;
-            video.autoplay = true;
-            video.setAttribute('muted', '');
-            video.setAttribute('playsinline', '');
-            video.setAttribute('autoplay', '');
-
-            if (video.srcObject !== stream) {
-              video.srcObject = stream;
-            }
-
+            video.srcObject = stream;
+            video.muted = true; // Required for reliable autoplay policy
+            
             const playVideo = () => {
-              const p = video.play();
-              if (p !== undefined) {
-                p.catch(e => console.log('[Video Play Notice]:', e.message));
-              }
+              video.play().then(() => {
+                console.log('[OmniCast Video Play Success]');
+              }).catch(err => {
+                console.warn('[Video Play Autoplay Blocked, waiting for user gesture]', err);
+                const unlock = () => {
+                  video.play();
+                  window.removeEventListener('click', unlock);
+                  window.removeEventListener('keydown', unlock);
+                };
+                window.addEventListener('click', unlock);
+                window.addEventListener('keydown', unlock);
+              });
             };
 
-            playVideo();
-
             video.onloadedmetadata = () => {
-              console.log('[Video Metadata Loaded]', video.videoWidth, 'x', video.videoHeight);
+              console.log('[Video Metadata]', video.videoWidth, 'x', video.videoHeight);
               playVideo();
+              updateResolutionStat(video.videoWidth, video.videoHeight);
             };
             video.oncanplay = () => playVideo();
 
             stream.getVideoTracks().forEach(track => {
               track.enabled = true;
-              track.onunmute = () => {
-                console.log('[Remote Video Track Unmuted]');
-                playVideo();
-              };
+              track.onunmute = () => playVideo();
             });
 
             stream.onaddtrack = (e) => {
-              console.log('[Remote Track Dynamically Added]', e.track.kind);
               if (e.track.kind === 'video') {
                 e.track.enabled = true;
                 e.track.onunmute = () => playVideo();
@@ -503,34 +432,31 @@
             };
           }
 
-          const loader = $('loaderOverlay');
-          if (loader) loader.classList.add('hidden');
+          hideConnectingLoader();
           const videoContainer = $('videoContainer');
           if (videoContainer) videoContainer.focus();
 
           sound.success();
-          showToast('Connected! Live screen view is active.', 'success');
-          startPingHeartbeat();
-          if (state.targetCode) saveRecentConnection(state.targetCode);
-        }
+          showToast('Connected! Live screen view active.', 'success');
+          startStatsPolling();
+          if (state.targetCode) saveRecentSession(state.targetCode);
+        };
 
         call.on('stream', (stream) => {
           attachRemoteStream(stream);
         });
 
-        // Also bind directly to underlying RTCPeerConnection ontrack event
         if (call.peerConnection) {
           call.peerConnection.ontrack = (event) => {
-            console.log('[Native RTCPeerConnection ontrack]', event.track.kind);
             const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
             attachRemoteStream(stream);
           };
         }
 
-        call.answer(); // Viewer answers
+        call.answer(); // Viewer answers the call
 
         call.on('close', () => {
-          stopAllSessions('Your partner stopped sharing their screen.');
+          stopAllSessions('Partner closed remote desktop.');
         });
 
         call.on('error', (err) => {
@@ -545,671 +471,364 @@
   }
 
   // =========================================================================
-  // Data Channel Messaging
+  // Data Channel Protocol Multiplexer
   // =========================================================================
   function listenToDataChannel(conn) {
+    conn.on('open', () => {
+      console.log('[OmniCast DataConnection Open]');
+    });
+
     conn.on('data', (data) => {
       if (!data) return;
 
-      // 1. Partner asks permission (Host receives this)
+      // 1. Viewer requests permission to connect (Host receives this)
       if (data.type === 'ask-permission') {
         const callerCode = data.fromCode || conn.peer.replace('omni-', '');
         state.targetCode = callerCode;
+        state.pendingCallerCode = callerCode;
+        state.pendingClientInfo = data.clientInfo || { browser: 'WebRTC Browser', os: 'Desktop' };
+        state.pendingPermissions = data.permissions || {};
+        
         sound.ring();
-        const friendCodeEl = $('incomingFriendCode');
-        if (friendCodeEl) friendCodeEl.textContent = formatDisplay(callerCode);
-        const modal = $('modalIncoming');
-        if (modal) modal.classList.remove('hidden');
+        showIncomingAuthModal(callerCode, state.pendingClientInfo);
       }
 
-      // 2. Partner accepted (Viewer receives this)
+      // 2. Host accepted connection request
       else if (data.type === 'accepted') {
-        const title = $('loaderTitle');
-        const sub = $('loaderSubtitle');
-        if (title) title.textContent = 'Starting video stream...';
-        if (sub) sub.textContent = 'Streaming 60 FPS ultra-low latency WebRTC';
-        sound.success();
-      }
-
-      // 3. Partner declined
-      else if (data.type === 'declined') {
-        sound.end();
-        showToast('Your partner declined the screen share request.', 'warning');
-        resetConnectButton();
-      }
-
-      // 4. Partner cancelled screen selection
-      else if (data.type === 'cancelled') {
-        sound.end();
-        showToast('Your partner cancelled screen selection.', 'warning');
-        resetConnectButton();
-      }
-
-      // 5. Ping & Pong
-      else if (data.type === 'ping') {
-        if (conn.open) conn.send({ type: 'pong', t: data.t });
-      } else if (data.type === 'pong') {
-        const rtt = Math.max(1, Math.round(Date.now() - data.t));
-        const pingEl = $('sessionPing');
-        if (pingEl) {
-          pingEl.textContent = `${rtt} ms`;
-          pingEl.style.color = rtt < 80 ? '#34d399' : (rtt < 160 ? '#fbbf24' : '#f87171');
+        console.log('[OmniCast Request Accepted by Host]');
+        if (data.permissions) {
+          state.permissions = { ...state.permissions, ...data.permissions };
         }
+        showToast('Host approved connection! Establishing stream...', 'success');
       }
 
-      // 6. Laser Pointer
+      // 3. Host declined connection request
+      else if (data.type === 'permission-denied') {
+        hideConnectingLoader();
+        stopAllSessions(data.reason || 'Host declined the connection request.');
+      }
+
+      // 4. Remote Control: Mouse Move
+      else if (data.type === 'mouse-move') {
+        renderHostMirroredCursor(data.x, data.y);
+        relayInputToHostBridge(data);
+      }
+
+      // 5. Remote Control: Mouse Down
+      else if (data.type === 'mouse-down') {
+        addClickRipple(data.x * window.innerWidth, data.y * window.innerHeight);
+        relayInputToHostBridge(data);
+      }
+
+      // 6. Remote Control: Mouse Up / Click
+      else if (data.type === 'mouse-up' || data.type === 'mouse-click') {
+        relayInputToHostBridge(data);
+      }
+
+      // 7. Remote Control: Mouse Wheel
+      else if (data.type === 'mouse-wheel') {
+        relayInputToHostBridge(data);
+      }
+
+      // 8. Remote Control: Keyboard Key Down / Up
+      else if (data.type === 'key-down') {
+        showHostKeyHUD(data.key);
+        relayInputToHostBridge(data);
+      } else if (data.type === 'key-up') {
+        relayInputToHostBridge(data);
+      }
+
+      // 9. Remote Control: Laser Pointer
       else if (data.type === 'laser') {
-        laserPoint = { x: data.x, y: data.y, time: Date.now() };
-
-        // Move native host cursor across entire screen for 100% full-screen coverage
-        relayToNativeHost({
-          type: 'laser',
-          xPercent: data.x,
-          yPercent: data.y,
-          click: !!data.click
-        });
-
-        if (state.isHost) {
-          const cursor = $('hostRemoteCursor');
-          if (cursor) {
-            cursor.classList.remove('hidden');
-            cursor.style.left = `${data.x * window.innerWidth}px`;
-            cursor.style.top = `${data.y * window.innerHeight}px`;
-          }
-        }
-        if (data.click) {
-          triggerLaserRipple(data.x, data.y);
-          if (state.isHost) showHostKeyHUD('🔴 Remote Laser Point');
-          sound.play(750, 0.04);
-        }
+        renderHostMirroredCursor(data.x, data.y, true);
+        addClickRipple(data.x * window.innerWidth, data.y * window.innerHeight, '#ef4444');
+        relayInputToHostBridge(data);
       }
 
-      // 7. Remote Input Event (Mouse / Keyboard Relay to Host)
-      else if (data.type === 'input') {
-        const ev = data.event;
-        if (!ev) return;
-
-        relayToNativeHost(ev);
-
-        // Update Host Remote Cursor
-        if (ev.type === 'mousemove') {
-          const cursor = $('hostRemoteCursor');
-          if (cursor) {
-            cursor.classList.remove('hidden');
-            const screenX = ev.xPercent * window.innerWidth;
-            const screenY = ev.yPercent * window.innerHeight;
-            cursor.style.left = `${screenX}px`;
-            cursor.style.top = `${screenY}px`;
-          }
-        } else if (ev.type === 'mousedown') {
-          const btnName = ev.button === 2 ? 'Right Click' : (ev.button === 1 ? 'Middle Click' : 'Left Click');
-          showHostKeyHUD(`🖱️ Remote: ${btnName}`);
-          sound.play(600, 0.05);
-        } else if (ev.type === 'dblclick') {
-          showHostKeyHUD('🖱️ Remote: Double Click');
-          sound.play(650, 0.05);
-          setTimeout(() => sound.play(650, 0.05), 80);
-        } else if (ev.type === 'keydown') {
-          const keyLabel = ev.key && ev.key.length === 1 ? `"${ev.key}"` : `[${ev.key}]`;
-          showHostKeyHUD(`⌨️ Remote Typed: ${keyLabel}`);
-          sound.play(540, 0.04);
-
-          // Type into host test pad if visible
-          const pad = $('hostScratchpadInput');
-          if (pad) {
-            if (ev.key === 'Backspace') {
-              pad.value = pad.value.slice(0, -1);
-            } else if (ev.key === 'Enter') {
-              pad.value += '\n';
-            } else if (ev.key && ev.key.length === 1) {
-              pad.value += ev.key;
-            }
-          }
-        }
-      }
-
-      // 8. Special Keys
+      // 10. Special Keys (Ctrl+Alt+Del, Windows Key, etc.)
       else if (data.type === 'special-key') {
-        relayToNativeHost({ type: 'special', action: data.action });
-        showHostKeyHUD(`⚡ Remote Special: [${data.action}]`);
-        sound.play(700, 0.08);
+        showHostKeyHUD(`Special: ${data.key}`);
+        relayInputToHostBridge(data);
       }
 
-      // 9. Custom String Typing
-      else if (data.type === 'type-string') {
-        showHostKeyHUD(`⌨️ Remote Typed: "${data.text}"`);
-        const pad = $('hostScratchpadInput');
-        if (pad && data.text) pad.value += data.text + ' ';
-        if (data.text && state.hasServerApi) {
-          relayToNativeHost({ type: 'type-string', text: data.text });
+      // 11. Text Input Snippet
+      else if (data.type === 'text-input') {
+        const scratchpad = $('hostScratchpadInput');
+        if (scratchpad) {
+          scratchpad.value += (scratchpad.value ? '\n' : '') + data.text;
+          const pad = $('hostTestPad');
+          if (pad) pad.classList.remove('hidden');
         }
-        sound.success();
+        showToast(`Remote Text: "${data.text.slice(0, 30)}"`, 'info');
+        relayInputToHostBridge(data);
       }
 
-      // 10. Live Chat
+      // 12. Live Chat Message
       else if (data.type === 'chat') {
-        appendChatMessage(data.text, 'theirs');
-        if (!state.isChatOpen) {
-          state.unreadChatCount++;
-          const badge = $('chatBadge');
-          if (badge) {
-            badge.textContent = state.unreadChatCount;
-            badge.classList.remove('hidden');
-          }
-          sound.play(700, 0.1);
+        appendChatMessage('Partner', data.text, data.timestamp || Date.now(), 'msg-peer');
+        if (!state.isDrawerOpen) {
+          state.unreadMessages++;
+          updateDrawerBadge();
+          sound.play(600, 0.1);
         }
       }
 
-      // 11. Chunked File Transfer
+      // 13. P2P File Transfer Protocol (16KB Chunks)
       else if (data.type === 'file-start') {
-        state.incomingFile = {
-          name: data.name,
-          size: data.size,
-          mime: data.mime,
-          chunks: [],
-          receivedBytes: 0
-        };
-        const banner = $('fileBanner');
-        if (banner) banner.classList.remove('hidden');
-        const nameEl = $('fileName');
-        if (nameEl) nameEl.textContent = data.name;
-        const fill = $('fileProgressFill');
-        if (fill) fill.style.width = '0%';
-        const status = $('fileStatusText');
-        if (status) status.textContent = 'Receiving file... 0%';
-        sound.play(600, 0.1);
+        handleFileStart(data);
       } else if (data.type === 'file-chunk') {
-        if (!state.incomingFile) return;
-        try {
-          if (typeof data.chunk === 'string') {
-            const bin = atob(data.chunk);
-            const len = bin.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-              bytes[i] = bin.charCodeAt(i);
-            }
-            state.incomingFile.chunks.push(bytes);
-            state.incomingFile.receivedBytes += data.byteLength || len;
-          } else if (data.chunk instanceof ArrayBuffer || ArrayBuffer.isView(data.chunk)) {
-            state.incomingFile.chunks.push(data.chunk);
-            state.incomingFile.receivedBytes += (data.chunk.byteLength || 0);
-          }
-        } catch (e) {
-          console.warn('[Chunk decode error]', e);
-        }
-        const pct = Math.min(100, Math.round((state.incomingFile.receivedBytes / state.incomingFile.size) * 100));
-        const fill = $('fileProgressFill');
-        if (fill) fill.style.width = `${pct}%`;
-        const status = $('fileStatusText');
-        if (status) status.textContent = `Receiving... ${pct}%`;
+        handleFileChunk(data);
       } else if (data.type === 'file-end') {
-        if (!state.incomingFile) return;
-        const blob = new Blob(state.incomingFile.chunks, { type: state.incomingFile.mime });
-        const url = URL.createObjectURL(blob);
-        const status = $('fileStatusText');
-        if (status) {
-          status.innerHTML = `<a href="${url}" download="${state.incomingFile.name}" style="color: #3b82f6; font-weight: 700; text-decoration: underline;">Download File</a>`;
-        }
-        showToast(`Received ${state.incomingFile.name}!`, 'success');
-        sound.success();
-
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = state.incomingFile.name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        state.incomingFile = null;
+        handleFileEnd(data);
       }
 
-      // 12. End session
-      else if (data.type === 'end-session') {
-        stopAllSessions(data.reason || 'Your partner ended the session.');
+      // 14. Shared Clipboard Sync
+      else if (data.type === 'clipboard-push') {
+        handleClipboardPush(data.text);
+      } else if (data.type === 'clipboard-pull-req') {
+        handleClipboardPullRequest();
+      } else if (data.type === 'clipboard-pull-resp') {
+        handleClipboardPullResponse(data.text);
+      }
+
+      // 15. Session Disconnect Notice
+      else if (data.type === 'session-end') {
+        stopAllSessions(data.reason || 'Partner ended the session.');
       }
     });
 
     conn.on('close', () => {
-      if (!isStopping && state.activeConn === conn) {
-        stopAllSessions('Partner disconnected.');
-      }
+      stopAllSessions('Data channel disconnected.');
+    });
+
+    conn.on('error', (err) => {
+      console.warn('[DataConnection Error]', err);
     });
   }
 
   // =========================================================================
-  // Viewer Connect Action
+  // 30-Second Incoming Connection Authorization Modal
   // =========================================================================
-  function startConnect(e) {
-    if (e) e.preventDefault();
-    if (state.isConnecting) return;
+  function showIncomingAuthModal(callerCode, clientInfo) {
+    const modal = $('modalIncoming');
+    if (!modal) return;
 
-    const input = $('targetCodeInput');
-    const clean = cleanDigits(input ? input.value : '');
+    $('incomingFriendCode').textContent = formatDisplay(callerCode);
+    $('incomingClientInfo').textContent = clientInfo.browser || 'WebRTC Remote Desktop';
 
-    if (clean.length !== 6) {
-      showToast('Please enter a 6-digit Desk Code (e.g. 482 910)', 'warning');
-      if (input) input.focus();
-      return;
-    }
+    modal.classList.remove('hidden');
 
-    if (clean === state.myCode) {
-      showToast('Cannot connect to your own computer code! Open OmniCast on another device or tab.', 'warning');
-      return;
-    }
+    // 30s Countdown timer
+    state.authSecondsRemaining = 30;
+    updateAuthCountdownUI();
 
-    if (!state.peer || !state.peer.open) {
-      if (state.peer && !state.peer.destroyed) {
-        showToast('Connecting to network broker, please wait a moment...', 'info');
-        let attempts = 0;
-        const checkInterval = setInterval(() => {
-          attempts++;
-          if (state.peer && state.peer.open) {
-            clearInterval(checkInterval);
-            startConnect();
-          } else if (attempts >= 10) {
-            clearInterval(checkInterval);
-            showToast('Broker taking longer than usual. Please retry in a few seconds.', 'warning');
-            resetConnectButton();
-          }
-        }, 300);
-        return;
+    if (state.authCountdownTimer) clearInterval(state.authCountdownTimer);
+    state.authCountdownTimer = setInterval(() => {
+      state.authSecondsRemaining--;
+      updateAuthCountdownUI();
+
+      if (state.authSecondsRemaining <= 0) {
+        clearInterval(state.authCountdownTimer);
+        state.authCountdownTimer = null;
+        rejectIncomingConnection('Authorization timed out (30s)');
       }
-      showToast('Connecting to network broker, please try again in a moment...', 'warning');
-      initPeer();
-      return;
-    }
+    }, 1000);
+  }
 
-    state.isConnecting = true;
-    state.targetCode = clean;
-
-    const btnConnect = $('btnConnect');
-    const btnText = $('connectBtnText');
-    const spinner = $('connectSpinner');
-    if (btnConnect) btnConnect.disabled = true;
-    if (btnText) btnText.textContent = 'Connecting...';
-    if (spinner) spinner.classList.remove('hidden');
-
-    // Show Session Connecting Screen IMMEDIATELY
-    const mainView = $('mainView');
-    const sessionView = $('sessionView');
-    const loader = $('loaderOverlay');
-    const title = $('loaderTitle');
-    const sub = $('loaderSubtitle');
-    const partnerName = $('sessionPartnerName');
-
-    if (mainView) mainView.classList.add('hidden');
-    if (sessionView) sessionView.classList.remove('hidden');
-    if (loader) loader.classList.remove('hidden');
-    if (title) title.textContent = `Connecting to Desk ${formatDisplay(clean)}...`;
-    if (sub) sub.textContent = 'Establishing secure WebRTC peer connection...';
-    if (partnerName) partnerName.textContent = `Remote Screen (${formatDisplay(clean)})`;
-
-    try {
-      const conn = state.peer.connect('omni-' + clean, { reliable: true, serialization: 'json' });
-      state.activeConn = conn;
-      listenToDataChannel(conn);
-
-      state.connectTimeoutTimer = setTimeout(() => {
-        if (state.isConnecting && !state.remoteStream && !state.localStream) {
-          showToast('Connection timed out. Partner may be offline or code is incorrect.', 'error');
-          stopAllSessions('Connection timed out.');
-        }
-      }, 25000);
-
-      conn.on('open', () => {
-        console.log('[Connected to Partner DataChannel] Asking permission...');
-        conn.send({
-          type: 'ask-permission',
-          fromCode: state.myCode
-        });
-
-        if (title) title.textContent = `Connected to Desk (${formatDisplay(clean)})`;
-        if (sub) sub.textContent = 'Waiting for partner to click "Yes, Allow Control" on their screen...';
-      });
-
-      conn.on('error', (err) => {
-        console.warn('[DataChannel Error]', err);
-        showToast('Connection error: ' + (err.message || err), 'error');
-        stopAllSessions('Connection error.');
-      });
-
-    } catch (e) {
-      showToast('Failed to initiate connection: ' + e.message, 'error');
-      stopAllSessions('Failed to connect.');
+  function updateAuthCountdownUI() {
+    const timerText = $('countdownTimerText');
+    const barFill = $('countdownBarFill');
+    if (timerText) timerText.textContent = `${state.authSecondsRemaining}s`;
+    if (barFill) {
+      const pct = (state.authSecondsRemaining / 30) * 100;
+      barFill.style.width = `${pct}%`;
     }
   }
 
-  function resetConnectButton() {
-    state.isConnecting = false;
-    if (state.connectTimeoutTimer) {
-      clearTimeout(state.connectTimeoutTimer);
-      state.connectTimeoutTimer = null;
+  function hideIncomingAuthModal() {
+    if (state.authCountdownTimer) {
+      clearInterval(state.authCountdownTimer);
+      state.authCountdownTimer = null;
     }
-    if (state.activeConn && !state.remoteStream && !state.localStream) {
-      try { state.activeConn.close(); } catch(e) {}
-      state.activeConn = null;
-    }
-    const btnConnect = $('btnConnect');
-    const btnText = $('connectBtnText');
-    const spinner = $('connectSpinner');
-    const sessionView = $('sessionView');
-    const mainView = $('mainView');
-
-    if (btnConnect) btnConnect.disabled = false;
-    if (btnText) btnText.textContent = 'Connect Now';
-    if (spinner) spinner.classList.add('hidden');
-    if (sessionView) sessionView.classList.add('hidden');
-    if (mainView) mainView.classList.remove('hidden');
-  }
-
-  // =========================================================================
-  // Host Response Actions (Allow / Decline)
-  // =========================================================================
-  async function hostAcceptScreenShare() {
     const modal = $('modalIncoming');
     if (modal) modal.classList.add('hidden');
+  }
 
+  function acceptIncomingConnection() {
+    hideIncomingAuthModal();
+    startHostScreenShare(state.pendingCallerCode);
+  }
+
+  function rejectIncomingConnection(reason = 'Host declined connection') {
+    hideIncomingAuthModal();
+    if (state.activeConn) {
+      state.activeConn.send({ type: 'permission-denied', reason });
+    }
+    showToast('Declined incoming connection request.', 'info');
+  }
+
+  // =========================================================================
+  // Host Screen Sharing Flow (getDisplayMedia)
+  // =========================================================================
+  async function startHostScreenShare(callerCode) {
     try {
-      let stream;
+      showToast('Select screen or window to share with partner...', 'info');
+
       const displayMediaOptions = {
         video: {
-          displaySurface: 'monitor',
           cursor: 'always',
           frameRate: { ideal: 60, max: 60 },
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         },
-        audio: false,
+        audio: state.permissions.allowAudio ? {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        } : false,
         selfBrowserSurface: 'exclude',
         surfaceSwitching: 'include',
         systemAudio: 'include'
       };
 
+      let stream;
       try {
         stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
       } catch (e1) {
         if (e1.name === 'NotAllowedError' || e1.name === 'AbortError') {
-          throw e1;
-        }
-        try {
-          stream = await navigator.mediaDevices.getDisplayMedia({
-            video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
-            audio: false
-          });
-        } catch (e2) {
-          if (e2.name === 'NotAllowedError' || e2.name === 'AbortError') {
-            throw e2;
+          if (state.activeConn) {
+            state.activeConn.send({ type: 'permission-denied', reason: 'Host cancelled screen selection.' });
           }
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+          return;
         }
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { cursor: 'always', frameRate: { ideal: 60, max: 60 } },
+          audio: false
+        });
       }
 
       state.localStream = stream;
       state.isHost = true;
 
-      // Keep host tab active in background so WebRTC encoding does not freeze
+      // Keep Host background tab active so Chrome doesn't throttle WebRTC encoder
       startBackgroundAudioKeepAlive();
 
-      if (stream.getVideoTracks() && stream.getVideoTracks()[0]) {
-        const vTrack = stream.getVideoTracks()[0];
-        if ('contentHint' in vTrack) {
-          vTrack.contentHint = 'motion';
-        }
+      const vTrack = stream.getVideoTracks()[0];
+      if (vTrack) {
+        if ('contentHint' in vTrack) vTrack.contentHint = 'motion';
         vTrack.onended = () => {
           stopAllSessions('You stopped sharing your screen.');
         };
       }
 
+      // Call Viewer with local screen stream
       if (state.activeConn) {
         state.activeCall = state.peer.call(state.activeConn.peer, stream);
-        if (state.activeCall) {
-          state.activeCall.on('error', (err) => {
-            console.warn('[Host Call Error]', err);
-          });
-        }
-        state.activeConn.send({ type: 'accepted' });
+        state.activeConn.send({
+          type: 'accepted',
+          permissions: state.permissions
+        });
       }
 
+      // Show Host Notice Floating Bar
       const notice = $('hostNotice');
-      const noticeSub = $('hostNoticeSub');
-      const friendCode = $('incomingFriendCode');
-      const testPad = $('hostTestPad');
-
       if (notice) notice.classList.remove('hidden');
-      if (noticeSub && friendCode) noticeSub.textContent = `Partner controlling: ${friendCode.textContent}`;
-      if (testPad) testPad.classList.remove('hidden');
+      $('hostNoticeSub').textContent = `Partner: ${formatDisplay(callerCode)}`;
 
       sound.success();
-      showToast('Screen streaming & remote control is LIVE!', 'success');
-      startPingHeartbeat();
-      if (state.targetCode) saveRecentConnection(state.targetCode);
+      showToast('Screen sharing started! Partner can now view and control.', 'success');
 
     } catch (err) {
-      console.warn('[Screen Share Cancelled / Not Allowed]', err);
+      console.error('[Screen Share Error]', err);
       if (state.activeConn) {
-        state.activeConn.send({ type: 'cancelled' });
+        state.activeConn.send({ type: 'permission-denied', reason: 'Screen share failed: ' + err.message });
       }
-      showToast('Screen share permission cancelled or not allowed', 'info');
+      showToast('Failed to start screen share: ' + err.message, 'error');
     }
   }
 
-  function hostDecline() {
-    const modal = $('modalIncoming');
-    if (modal) modal.classList.add('hidden');
-    if (state.activeConn) {
-      state.activeConn.send({ type: 'declined' });
-      try { state.activeConn.close(); } catch (e) {}
-    }
-    showToast('Declined request', 'info');
-  }
-
   // =========================================================================
-  // Normalized Coordinates Calculation
+  // Viewer Request Connection Flow
   // =========================================================================
-  function getNormalizedCoords(e) {
-    const video = $('remoteVideo');
-    if (!video) return null;
-    const rect = video.getBoundingClientRect();
-    if (!rect.width || !rect.height) return null;
-
-    const clientX = e.clientX - rect.left;
-    const clientY = e.clientY - rect.top;
-
-    if (video.classList.contains('fit-stretch')) {
-      const xPercent = Math.max(0, Math.min(1, clientX / rect.width));
-      const yPercent = Math.max(0, Math.min(1, clientY / rect.height));
-      return { xPercent, yPercent };
-    }
-
-    const videoWidth = video.videoWidth || rect.width;
-    const videoHeight = video.videoHeight || rect.height;
-
-    const videoRatio = videoWidth / videoHeight;
-    const elementRatio = rect.width / rect.height;
-
-    let actualWidth = rect.width;
-    let actualHeight = rect.height;
-    let offsetX = 0;
-    let offsetY = 0;
-
-    if (elementRatio > videoRatio) {
-      actualWidth = rect.height * videoRatio;
-      offsetX = (rect.width - actualWidth) / 2;
-    } else {
-      actualHeight = rect.width / videoRatio;
-      offsetY = (rect.height - actualHeight) / 2;
-    }
-
-    const relativeX = clientX - offsetX;
-    const relativeY = clientY - offsetY;
-
-    const xPercent = Math.max(0, Math.min(1, relativeX / actualWidth));
-    const yPercent = Math.max(0, Math.min(1, relativeY / actualHeight));
-
-    return { xPercent, yPercent };
-  }
-
-  function sendRemoteInput(event) {
-    if (!state.activeConn || !state.activeConn.open) return;
-    state.activeConn.send({
-      type: 'input',
-      event
-    });
-  }
-
-  // =========================================================================
-  // Chat Functions
-  // =========================================================================
-  function appendChatMessage(text, side) {
-    const container = $('chatMessages');
-    if (!container) return;
-    const bubble = document.createElement('div');
-    bubble.className = `msg-bubble ${side}`;
-    bubble.textContent = text;
-    container.appendChild(bubble);
-    container.scrollTop = container.scrollHeight;
-  }
-
-  function sendChatMessage(e) {
-    if (e) e.preventDefault();
-    const input = $('chatInput');
-    const text = input ? input.value.trim() : '';
-    if (!text || !state.activeConn) return;
-
-    state.activeConn.send({
-      type: 'chat',
-      text
-    });
-
-    appendChatMessage(text, 'mine');
-    if (input) input.value = '';
-  }
-
-  // =========================================================================
-  // File Transfer Function
-  // =========================================================================
-  function sendFileToFriend(file) {
-    if (!state.activeConn) {
-      showToast('No active connection to send file!', 'error');
+  function requestConnectionToRemote(rawTargetCode) {
+    const clean = cleanDigits(rawTargetCode);
+    if (!clean || clean.length !== 9) {
+      showToast('Please enter a valid 9-digit address (e.g. 482 910 334)', 'error');
       return;
     }
 
-    const banner = $('fileBanner');
-    const nameEl = $('fileName');
-    const fill = $('fileProgressFill');
-    const status = $('fileStatusText');
-
-    if (banner) banner.classList.remove('hidden');
-    if (nameEl) nameEl.textContent = file.name;
-    if (fill) fill.style.width = '0%';
-    if (status) status.textContent = 'Sending... 0%';
-
-    state.activeConn.send({
-      type: 'file-start',
-      name: file.name,
-      size: file.size,
-      mime: file.type || 'application/octet-stream'
-    });
-
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    let chunkIndex = 0;
-    const reader = new FileReader();
-
-    function readNext() {
-      const start = chunkIndex * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      reader.readAsDataURL(file.slice(start, end));
+    if (clean === state.myCode) {
+      showToast('Cannot connect to your own desk from the same browser tab.', 'error');
+      return;
     }
 
-    reader.onload = (e) => {
-      if (!state.activeConn || !state.activeConn.open) {
-        if (status) status.textContent = 'Connection lost during transfer.';
-        return;
-      }
-      const dataUrl = e.target.result;
-      const base64 = dataUrl.split(',')[1] || '';
-      const start = chunkIndex * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const rawChunkLen = end - start;
+    state.targetCode = clean;
+    state.isHost = false;
 
-      state.activeConn.send({
-        type: 'file-chunk',
-        chunk: base64,
-        byteLength: rawChunkLen
+    showConnectingLoader();
+
+    try {
+      const conn = state.peer.connect('omni-' + clean, {
+        reliable: true,
+        serialization: 'json'
       });
 
-      chunkIndex++;
-      const pct = Math.round((chunkIndex / totalChunks) * 100);
-      if (fill) fill.style.width = `${pct}%`;
-      if (status) status.textContent = `Sending... ${pct}%`;
+      state.activeConn = conn;
 
-      if (chunkIndex < totalChunks) {
-        setTimeout(readNext, 12);
-      } else {
-        state.activeConn.send({ type: 'file-end' });
-        if (status) status.textContent = 'Sent Successfully!';
-        showToast(`Sent ${file.name}!`, 'success');
-        setTimeout(() => {
-          if (banner) banner.classList.add('hidden');
-        }, 2500);
-      }
-    };
+      conn.on('open', () => {
+        console.log('[Viewer Connected to Host DataChannel]');
+        // Ask Host for authorization
+        conn.send({
+          type: 'ask-permission',
+          fromCode: state.myCode,
+          clientInfo: {
+            browser: navigator.userAgent.includes('Chrome') ? 'Google Chrome' : navigator.userAgent.includes('Firefox') ? 'Mozilla Firefox' : 'Web Browser',
+            platform: navigator.platform || 'Desktop'
+          },
+          permissions: state.permissions
+        });
+      });
 
-    readNext();
-  }
+      listenToDataChannel(conn);
 
-  // Keep host tab active in background to avoid Chrome background-tab WebRTC freezing
-  function startBackgroundAudioKeepAlive() {
-    try {
-      if (state.keepAliveCtx) return;
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0.00001; // virtually inaudible
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      state.keepAliveCtx = ctx;
-    } catch (e) {}
-  }
-
-  function stopBackgroundAudioKeepAlive() {
-    try {
-      if (state.keepAliveCtx) {
-        state.keepAliveCtx.close();
-        state.keepAliveCtx = null;
-      }
-    } catch (e) {}
-  }
-
-  // =========================================================================
-  // Stop Session / Disconnect
-  // =========================================================================
-  let isStoppingSession = false;
-  function stopAllSessions(reason = 'Session ended.') {
-    if (isStoppingSession) return;
-    isStoppingSession = true;
-
-    stopBackgroundAudioKeepAlive();
-    if (state.connectTimeoutTimer) clearTimeout(state.connectTimeoutTimer);
-    stopPingHeartbeat();
-
-    state.isHost = false;
-    state.isConnecting = false;
-    state.isMouseDown = false;
-    state.targetCode = null;
-
-    if (state.localStream) {
-      state.localStream.getTracks().forEach((t) => t.stop());
-      state.localStream = null;
+    } catch (e) {
+      hideConnectingLoader();
+      showToast('Connection failed to start: ' + e.message, 'error');
     }
+  }
 
-    if (state.remoteStream) {
+  function showConnectingLoader() {
+    const sessionView = $('sessionView');
+    const mainView = $('mainView');
+    const loader = $('loaderOverlay');
+
+    if (sessionView) sessionView.classList.remove('hidden');
+    if (mainView) mainView.classList.add('hidden');
+    if (loader) loader.classList.remove('hidden');
+
+    $('loaderTitle').textContent = 'Connecting to partner...';
+    $('loaderSubtitle').textContent = 'Waiting for remote host approval and WebRTC media handshake (30s)';
+  }
+
+  function hideConnectingLoader() {
+    const loader = $('loaderOverlay');
+    if (loader) loader.classList.add('hidden');
+  }
+
+  // =========================================================================
+  // Teardown & Stop All Sessions
+  // =========================================================================
+  function stopAllSessions(reason) {
+    stopStatsPolling();
+    stopRecording();
+    stopBackgroundAudioKeepAlive();
+
+    if (state.activeConn) {
       try {
-        state.remoteStream.getTracks().forEach((t) => t.stop());
+        state.activeConn.send({ type: 'session-end', reason: reason || 'Session disconnected' });
       } catch (e) {}
-      state.remoteStream = null;
+      try { state.activeConn.close(); } catch (e) {}
+      state.activeConn = null;
     }
 
     if (state.activeCall) {
@@ -1217,522 +836,1057 @@
       state.activeCall = null;
     }
 
-    if (state.activeConn) {
-      try {
-        if (state.activeConn.open) {
-          state.activeConn.send({ type: 'end-session', reason });
-        }
-        state.activeConn.close();
-      } catch (e) {}
-      state.activeConn = null;
+    if (state.localStream) {
+      state.localStream.getTracks().forEach(t => t.stop());
+      state.localStream = null;
+    }
+
+    if (state.remoteStream) {
+      state.remoteStream.getTracks().forEach(t => t.stop());
+      state.remoteStream = null;
     }
 
     const video = $('remoteVideo');
-    if (video && video.srcObject) {
-      video.srcObject = null;
-    }
+    if (video) video.srcObject = null;
 
-    if (document.fullscreenElement) {
-      try { document.exitFullscreen(); } catch (e) {}
-    }
+    const sessionView = $('sessionView');
+    const mainView = $('mainView');
+    const hostNotice = $('hostNotice');
+
+    if (sessionView) sessionView.classList.add('hidden');
+    if (mainView) mainView.classList.remove('hidden');
+    if (hostNotice) hostNotice.classList.add('hidden');
 
     const cursor = $('hostRemoteCursor');
-    const hud = $('hostKeyHUD');
-    const sessionView = $('sessionView');
-    const hostNotice = $('hostNotice');
-    const modal = $('modalIncoming');
-    const drawer = $('chatDrawer');
-    const banner = $('fileBanner');
-    const dropdown = $('keysDropdown');
-    const testPad = $('hostTestPad');
-    const dropZone = $('dropZoneOverlay');
-    const mainView = $('mainView');
-
     if (cursor) cursor.classList.add('hidden');
-    if (hud) hud.classList.add('hidden');
-    if (sessionView) sessionView.classList.add('hidden');
-    if (hostNotice) hostNotice.classList.add('hidden');
-    if (modal) modal.classList.add('hidden');
-    if (drawer) drawer.classList.add('hidden');
-    if (banner) banner.classList.add('hidden');
-    if (dropdown) dropdown.classList.add('hidden');
-    if (testPad) testPad.classList.add('hidden');
-    if (dropZone) dropZone.classList.add('hidden');
-    if (mainView) mainView.classList.remove('hidden');
 
-    resetConnectButton();
+    state.isHost = false;
     sound.end();
-    showToast(reason, 'info');
 
-    setTimeout(() => {
-      isStoppingSession = false;
-    }, 350);
+    if (reason) showToast(reason, 'info');
   }
 
-  // Safe Clipboard Copy with execCommand fallback
-  function copyTextToClipboard(text, successCb, failCb) {
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text)
-        .then(() => { if (successCb) successCb(); })
-        .catch(() => { fallbackCopyText(text, successCb, failCb); });
-    } else {
-      fallbackCopyText(text, successCb, failCb);
-    }
-  }
+  // =========================================================================
+  // WebRTC Stats Poller (RTT, FPS, Bitrate, Resolution)
+  // =========================================================================
+  function startStatsPolling() {
+    stopStatsPolling();
+    state.prevBytesReceived = 0;
+    state.prevTimestamp = performance.now();
 
-  function fallbackCopyText(text, successCb, failCb) {
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      ta.style.top = '0';
-      ta.setAttribute('readonly', '');
-      document.body.appendChild(ta);
-      ta.select();
-      const ok = document.execCommand('copy');
-      document.body.removeChild(ta);
-      if (ok) {
-        if (successCb) successCb();
-      } else {
-        if (failCb) failCb();
+    state.statsInterval = setInterval(async () => {
+      if (!state.activeCall || !state.activeCall.peerConnection) return;
+      const pc = state.activeCall.peerConnection;
+
+      try {
+        const stats = await pc.getStats();
+        let rtt = null;
+        let fps = null;
+        let bitrate = null;
+        let resWidth = null;
+        let resHeight = null;
+
+        stats.forEach(report => {
+          // Candidate pair RTT
+          if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            if (report.currentRoundTripTime !== undefined) {
+              rtt = Math.round(report.currentRoundTripTime * 1000);
+            }
+          }
+          // Inbound RTP Video stats
+          if (report.type === 'inbound-rtp' && report.kind === 'video') {
+            if (report.framesPerSecond !== undefined) {
+              fps = Math.round(report.framesPerSecond);
+            }
+            if (report.frameWidth && report.frameHeight) {
+              resWidth = report.frameWidth;
+              resHeight = report.frameHeight;
+            }
+            if (report.bytesReceived !== undefined) {
+              const now = performance.now();
+              const dt = (now - state.prevTimestamp) / 1000;
+              if (dt > 0.5 && state.prevBytesReceived > 0) {
+                const bps = ((report.bytesReceived - state.prevBytesReceived) * 8) / dt;
+                if (bps > 1000000) {
+                  bitrate = (bps / 1000000).toFixed(1) + ' Mbps';
+                } else {
+                  bitrate = Math.round(bps / 1000) + ' kbps';
+                }
+              }
+              state.prevBytesReceived = report.bytesReceived;
+              state.prevTimestamp = now;
+            }
+          }
+        });
+
+        if (rtt !== null && $('statRtt')) $('statRtt').textContent = rtt;
+        if (fps !== null && $('statFps')) $('statFps').textContent = fps;
+        if (bitrate !== null && $('statBitrate')) $('statBitrate').textContent = bitrate;
+        if (resWidth && resHeight) updateResolutionStat(resWidth, resHeight);
+
+      } catch (e) {
+        console.warn('[Stats Polling Error]', e);
       }
+    }, 1000);
+  }
+
+  function stopStatsPolling() {
+    if (state.statsInterval) {
+      clearInterval(state.statsInterval);
+      state.statsInterval = null;
+    }
+  }
+
+  function updateResolutionStat(w, h) {
+    const resEl = $('statRes');
+    if (!resEl) return;
+    if (h >= 1080) resEl.textContent = '1080p';
+    else if (h >= 720) resEl.textContent = '720p';
+    else if (h >= 480) resEl.textContent = '480p';
+    else resEl.textContent = `${w}x${h}`;
+  }
+
+  // =========================================================================
+  // Local Screen Recorder (MediaRecorder -> .webm)
+  // =========================================================================
+  function toggleScreenRecording() {
+    if (state.isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }
+
+  function startRecording() {
+    if (!state.remoteStream) {
+      showToast('No active remote video stream to record.', 'error');
+      return;
+    }
+
+    try {
+      state.recordedChunks = [];
+      const options = { mimeType: 'video/webm;codecs=vp9,opus' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options.mimeType = 'video/webm;codecs=vp8,opus';
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          options.mimeType = 'video/webm';
+        }
+      }
+
+      state.mediaRecorder = new MediaRecorder(state.remoteStream, options);
+
+      state.mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          state.recordedChunks.push(event.data);
+        }
+      };
+
+      state.mediaRecorder.onstop = () => {
+        const blob = new Blob(state.recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `OmniCast-Recording-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 100);
+
+        sound.success();
+        showToast('Screen recording saved & downloaded as .webm!', 'success');
+      };
+
+      state.mediaRecorder.start(1000); // 1-second chunks
+      state.isRecording = true;
+      state.recordingSeconds = 0;
+
+      const btn = $('btnRecordScreen');
+      const label = $('recordBtnLabel');
+      if (btn) btn.classList.add('recording');
+      if (label) label.textContent = 'REC 00:00';
+
+      state.recordingTimer = setInterval(() => {
+        state.recordingSeconds++;
+        const mins = String(Math.floor(state.recordingSeconds / 60)).padStart(2, '0');
+        const secs = String(state.recordingSeconds % 60).padStart(2, '0');
+        if (label) label.textContent = `REC ${mins}:${secs}`;
+      }, 1000);
+
+      showToast('Recording started. Click again to stop and download.', 'info');
+
     } catch (e) {
-      if (failCb) failCb(e);
+      console.error('[MediaRecorder Error]', e);
+      showToast('Recording failed: ' + e.message, 'error');
+    }
+  }
+
+  function stopRecording() {
+    if (!state.isRecording) return;
+    if (state.recordingTimer) {
+      clearInterval(state.recordingTimer);
+      state.recordingTimer = null;
+    }
+    state.isRecording = false;
+
+    const btn = $('btnRecordScreen');
+    const label = $('recordBtnLabel');
+    if (btn) btn.classList.remove('recording');
+    if (label) label.textContent = 'Record';
+
+    if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
+      state.mediaRecorder.stop();
     }
   }
 
   // =========================================================================
-  // UI Event Bindings
+  // P2P File Transfer Engine (16KB Chunking)
   // =========================================================================
-  function bindUI() {
-    // Enforce Clean Light Theme
+  function sendFileOverDataChannel(file) {
+    if (!state.activeConn) {
+      showToast('Cannot send file: No active connection.', 'error');
+      return;
+    }
+
+    const transferId = 'tx_' + Math.random().toString(36).substring(2, 9);
+    const totalChunks = Math.ceil(file.size / FILE_CHUNK_SIZE);
+    
+    // Add transfer card to UI
+    renderTransferCard(transferId, file.name, file.size, 'upload');
+
+    // 1. Send file-start metadata
+    state.activeConn.send({
+      type: 'file-start',
+      id: transferId,
+      name: file.name,
+      size: file.size,
+      mimeType: file.type || 'application/octet-stream',
+      totalChunks
+    });
+
+    // 2. Read and stream chunks
+    let offset = 0;
+    let chunkIndex = 0;
+    const startTime = performance.now();
+
+    function readNextChunk() {
+      const slice = file.slice(offset, offset + FILE_CHUNK_SIZE);
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        const dataUrl = e.target.result; // base64 payload
+        state.activeConn.send({
+          type: 'file-chunk',
+          id: transferId,
+          chunkIndex,
+          totalChunks,
+          data: dataUrl
+        });
+
+        offset += FILE_CHUNK_SIZE;
+        chunkIndex++;
+
+        // Update progress
+        const pct = Math.min(100, Math.round((chunkIndex / totalChunks) * 100));
+        const elapsed = (performance.now() - startTime) / 1000;
+        const speed = elapsed > 0 ? Math.round((offset / 1024) / elapsed) : 0;
+        updateTransferProgress(transferId, pct, `${speed} KB/s`);
+
+        if (offset < file.size) {
+          // Microtask yield to prevent blocking event loop
+          setTimeout(readNextChunk, 2);
+        } else {
+          // 3. Send file-end
+          state.activeConn.send({ type: 'file-end', id: transferId });
+          markTransferCompleted(transferId);
+          sound.success();
+          showToast(`File "${file.name}" sent successfully!`, 'success');
+        }
+      };
+
+      reader.readAsDataURL(slice);
+    }
+
+    readNextChunk();
+  }
+
+  function handleFileStart(meta) {
+    state.incomingTransfers.set(meta.id, {
+      id: meta.id,
+      name: meta.name,
+      size: meta.size,
+      mimeType: meta.mimeType,
+      totalChunks: meta.totalChunks,
+      receivedChunks: 0,
+      chunks: new Array(meta.totalChunks),
+      startTime: performance.now()
+    });
+
+    renderTransferCard(meta.id, meta.name, meta.size, 'download');
+    showToast(`Incoming file: ${meta.name} (${formatBytes(meta.size)})`, 'info');
+  }
+
+  function handleFileChunk(chunkData) {
+    const transfer = state.incomingTransfers.get(chunkData.id);
+    if (!transfer) return;
+
+    transfer.chunks[chunkData.chunkIndex] = chunkData.data;
+    transfer.receivedChunks++;
+
+    const pct = Math.min(100, Math.round((transfer.receivedChunks / transfer.totalChunks) * 100));
+    const elapsed = (performance.now() - transfer.startTime) / 1000;
+    const speed = elapsed > 0 ? Math.round(((transfer.receivedChunks * FILE_CHUNK_SIZE) / 1024) / elapsed) : 0;
+
+    updateTransferProgress(chunkData.id, pct, `${speed} KB/s`);
+  }
+
+  function handleFileEnd(endData) {
+    const transfer = state.incomingTransfers.get(endData.id);
+    if (!transfer) return;
+
+    markTransferCompleted(transfer.id);
+
+    // Convert base64 chunks back to Blob
+    const byteArrays = [];
+    for (let i = 0; i < transfer.chunks.length; i++) {
+      const dataUrl = transfer.chunks[i];
+      if (!dataUrl) continue;
+      const base64 = dataUrl.split(',')[1];
+      const byteChars = atob(base64);
+      const byteNumbers = new Uint8Array(byteChars.length);
+      for (let j = 0; j < byteChars.length; j++) {
+        byteNumbers[j] = byteChars.charCodeAt(j);
+      }
+      byteArrays.push(byteNumbers);
+    }
+
+    const blob = new Blob(byteArrays, { type: transfer.mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = transfer.name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+
+    sound.success();
+    showToast(`File "${transfer.name}" received & downloaded!`, 'success');
+    state.incomingTransfers.delete(transfer.id);
+  }
+
+  function renderTransferCard(id, name, size, direction) {
+    const list = $('transfersList');
+    if (!list) return;
+    const emptyNotice = list.querySelector('.recent-empty') || list.querySelector('.text-slate-500');
+    if (emptyNotice) emptyNotice.remove();
+
+    const dirIcon = direction === 'upload' ? '↑' : '↓';
+    const card = document.createElement('div');
+    card.id = `card_${id}`;
+    card.className = 'transfer-card';
+    card.innerHTML = `
+      <div class="transfer-header">
+        <span class="transfer-filename">${dirIcon} ${name}</span>
+        <span class="transfer-size">${formatBytes(size)}</span>
+      </div>
+      <div class="transfer-progress-bg">
+        <div id="fill_${id}" class="transfer-progress-fill" style="width: 0%;"></div>
+      </div>
+      <div class="transfer-status-text">
+        <span id="speed_${id}">0 KB/s</span>
+        <span id="pct_${id}">0%</span>
+      </div>
+    `;
+    list.prepend(card);
+  }
+
+  function updateTransferProgress(id, pct, speed) {
+    const fill = $(`fill_${id}`);
+    const pctEl = $(`pct_${id}`);
+    const speedEl = $(`speed_${id}`);
+    if (fill) fill.style.width = `${pct}%`;
+    if (pctEl) pctEl.textContent = `${pct}%`;
+    if (speedEl) speedEl.textContent = speed;
+  }
+
+  function markTransferCompleted(id) {
+    const speedEl = $(`speed_${id}`);
+    const pctEl = $(`pct_${id}`);
+    if (speedEl) speedEl.textContent = 'Completed';
+    if (pctEl) pctEl.textContent = '100%';
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  // =========================================================================
+  // Shared Clipboard Synchronization
+  // =========================================================================
+  function handleClipboardPush(text) {
+    state.sharedClipboardText = text;
+    const area = $('sharedClipboardText');
+    if (area) area.value = text;
+
     try {
-      localStorage.setItem('omnicast_theme', 'light');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      }
     } catch (e) {}
 
-    // Dismiss file banner if present
-    on($('btnDismissScheme'), 'click', () => {
-      const banner = $('fileSchemeBanner');
-      if (banner) banner.classList.add('hidden');
-    });
+    showToast('Remote clipboard pushed to your clipboard!', 'info');
+  }
 
-    // Copy Code Button
-    on($('btnCopyCode'), 'click', () => {
-      copyTextToClipboard(state.myCode, () => {
-        const btn = $('btnCopyCode');
-        const text = $('copyBtnText');
-        if (btn) btn.classList.add('copied');
-        if (text) text.textContent = 'Copied!';
-        showToast('Code copied! Send it to your partner.', 'success');
-        setTimeout(() => {
-          if (btn) btn.classList.remove('copied');
-          if (text) text.textContent = 'Copy Code';
-        }, 2000);
-      }, () => {
-        showToast(`Your Desk Code: ${formatDisplay(state.myCode)}`, 'info');
-      });
-    });
-
-    // Get New Code
-    on($('btnNewCode'), 'click', () => {
-      const fresh = String(Math.floor(100000 + Math.random() * 900000));
-      state.myCode = fresh;
-      try {
-        sessionStorage.setItem('omnicast_my_code', fresh);
-      } catch (e) {}
-      const disp = $('myCodeDisplay');
-      if (disp) disp.textContent = formatDisplay(fresh);
-      initPeer();
-      showToast('Generated a new code!', 'info');
-    });
-
-    // Partner Code Input & Paste
-    on($('targetCodeInput'), 'input', (e) => {
-      const clean = cleanDigits(e.target.value);
-      e.target.value = formatDisplay(clean);
-    });
-
-    on($('targetCodeInput'), 'paste', (e) => {
-      e.preventDefault();
-      const text = (e.clipboardData || window.clipboardData).getData('text');
-      const clean = cleanDigits(text);
-      const input = $('targetCodeInput');
-      if (input) input.value = formatDisplay(clean);
-    });
-
-    // Connect Form Submit
-    on($('connectForm'), 'submit', startConnect);
-    on($('btnCancelConnect'), 'click', () => stopAllSessions('Cancelled connection.'));
-
-    // Host Incoming Modal Buttons
-    on($('btnAccept'), 'click', hostAcceptScreenShare);
-    on($('btnDecline'), 'click', hostDecline);
-    on($('btnHostStop'), 'click', () => stopAllSessions('You stopped sharing.'));
-
-    // Mode Switch: Control vs Laser
-    on($('btnToggleControl'), 'click', () => {
-      state.mode = 'control';
-      const btnControl = $('btnToggleControl');
-      const btnPointer = $('btnTogglePointer');
-      const video = $('remoteVideo');
-      if (btnControl) btnControl.classList.add('active');
-      if (btnPointer) btnPointer.classList.remove('active');
-      if (video) video.classList.add('control-active');
-      showToast('🎮 Remote Control: Live Mouse & Keyboard Active', 'info');
-    });
-
-    on($('btnTogglePointer'), 'click', () => {
-      state.mode = 'laser';
-      const btnControl = $('btnToggleControl');
-      const btnPointer = $('btnTogglePointer');
-      const video = $('remoteVideo');
-      if (btnPointer) btnPointer.classList.add('active');
-      if (btnControl) btnControl.classList.remove('active');
-      if (video) video.classList.remove('control-active');
-      showToast('🔴 Laser Highlight Mode Active', 'info');
-    });
-
-    // Audio Mute / Unmute Toggle
-    on($('btnToggleAudio'), 'click', () => {
-      const video = $('remoteVideo');
-      const label = $('audioLabel');
-      const icon = $('audioIcon');
-      if (!video) return;
-      video.muted = !video.muted;
-      if (label) label.textContent = video.muted ? 'Muted' : 'Sound On';
-      if (icon) {
-        icon.innerHTML = video.muted 
-          ? '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line>'
-          : '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
-      }
-      showToast(video.muted ? 'Remote Audio Muted' : 'Remote Audio Unmuted', 'info');
-    });
-
-    // Fit Screen vs Stretch Toggle
-    on($('btnToggleFit'), 'click', () => {
-      const video = $('remoteVideo');
-      if (!video) return;
-      const isStretch = video.classList.toggle('fit-stretch');
-      showToast(isStretch ? 'Mode: Stretch Full View' : 'Mode: Fit Aspect Ratio', 'info');
-    });
-
-    // Special Keys Dropdown Toggle
-    on($('btnSpecialKeys'), 'click', (e) => {
-      e.stopPropagation();
-      state.isKeysOpen = !state.isKeysOpen;
-      const dropdown = $('keysDropdown');
-      if (dropdown) dropdown.classList.toggle('hidden', !state.isKeysOpen);
-    });
-
-    document.addEventListener('click', (e) => {
-      const dropdown = $('keysDropdown');
-      const btn = $('btnSpecialKeys');
-      if (dropdown && !dropdown.contains(e.target) && e.target !== btn) {
-        state.isKeysOpen = false;
-        dropdown.classList.add('hidden');
-      }
-    });
-
-    function sendSpecialAction(action) {
-      if (!state.activeConn || !state.activeConn.open) {
-        showToast('No active session connected!', 'warning');
-        return;
-      }
-      state.activeConn.send({ type: 'special-key', action });
-      showToast(`Sent [${action}] to remote partner!`, 'success');
-      state.isKeysOpen = false;
-      const dropdown = $('keysDropdown');
-      if (dropdown) dropdown.classList.add('hidden');
+  function handleClipboardPullRequest() {
+    const area = $('sharedClipboardText');
+    const text = area ? area.value : state.sharedClipboardText;
+    if (state.activeConn) {
+      state.activeConn.send({ type: 'clipboard-pull-resp', text });
     }
+  }
 
-    on($('btnKeyCAD'), 'click', () => sendSpecialAction('CAD'));
-    on($('btnKeyWin'), 'click', () => sendSpecialAction('WIN'));
-    on($('btnKeyAltTab'), 'click', () => sendSpecialAction('ALTTAB'));
+  function handleClipboardPullResponse(text) {
+    state.sharedClipboardText = text;
+    const area = $('sharedClipboardText');
+    if (area) area.value = text;
 
-    function sendCustomText() {
-      const input = $('textSenderInput');
-      const text = input ? input.value : '';
-      if (!text) return;
-      if (!state.activeConn || !state.activeConn.open) {
-        showToast('No active session connected!', 'warning');
-        return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
       }
-      state.activeConn.send({ type: 'type-string', text });
-      showToast(`Typed "${text}" on remote partner's screen!`, 'success');
-      if (input) input.value = '';
-      state.isKeysOpen = false;
-      const dropdown = $('keysDropdown');
-      if (dropdown) dropdown.classList.add('hidden');
+    } catch (e) {}
+
+    showToast('Remote clipboard pulled successfully!', 'success');
+  }
+
+  // =========================================================================
+  // Live Chat Messaging
+  // =========================================================================
+  function sendChatMessage(text) {
+    if (!text || !text.trim() || !state.activeConn) return;
+    const cleanText = text.trim();
+    const timestamp = Date.now();
+
+    appendChatMessage('You', cleanText, timestamp, 'msg-self');
+
+    state.activeConn.send({
+      type: 'chat',
+      text: cleanText,
+      timestamp
+    });
+  }
+
+  function appendChatMessage(sender, text, timestamp, className) {
+    const wrap = $('chatMessages');
+    if (!wrap) return;
+
+    const timeStr = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const div = document.createElement('div');
+    div.className = `chat-msg ${className}`;
+    div.innerHTML = `
+      <div class="chat-meta">
+        <span>${sender}</span>
+        <span>•</span>
+        <span>${timeStr}</span>
+      </div>
+      <div class="chat-bubble">${escapeHtml(text)}</div>
+    `;
+    wrap.appendChild(div);
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>'"]/g, tag => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }[tag] || tag));
+  }
+
+  function updateDrawerBadge() {
+    const badge = $('drawerBadge');
+    if (!badge) return;
+    if (state.unreadMessages > 0) {
+      badge.textContent = state.unreadMessages;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
     }
+  }
 
-    on($('btnSendTextToRemote'), 'click', sendCustomText);
-    on($('textSenderInput'), 'keydown', (e) => {
-      if (e.key === 'Enter') sendCustomText();
-    });
-
-    // Drag & Drop File Transfer on Video Container
-    const videoContainer = $('videoContainer');
-    const dropZone = $('dropZoneOverlay');
-
-    on(videoContainer, 'dragover', (e) => {
-      e.preventDefault();
-      if (dropZone) dropZone.classList.remove('hidden');
-    });
-
-    on(videoContainer, 'dragleave', (e) => {
-      if (e.relatedTarget === null || !videoContainer.contains(e.relatedTarget)) {
-        if (dropZone) dropZone.classList.add('hidden');
-      }
-    });
-
-    on(videoContainer, 'drop', (e) => {
-      e.preventDefault();
-      if (dropZone) dropZone.classList.add('hidden');
-      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        sendFileToFriend(e.dataTransfer.files[0]);
-      }
-    });
-
-    // Remote Video & Container Mouse Events (Full-Screen Pixel Coverage)
-    const video = $('remoteVideo');
+  // =========================================================================
+  // Remote Control Handlers (Viewer to Host)
+  // =========================================================================
+  function bindViewerInputEvents() {
     const container = $('videoContainer');
+    const video = $('remoteVideo');
+    if (!container || !video) return;
 
-    function handleMouseMove(e) {
-      const coords = getNormalizedCoords(e);
-      if (!coords) return;
-
-      if (state.mode === 'laser') {
-        laserPoint = { x: coords.xPercent, y: coords.yPercent, time: Date.now() };
-        if (state.activeConn && state.activeConn.open) {
-          state.activeConn.send({
-            type: 'laser',
-            x: coords.xPercent,
-            y: coords.yPercent,
-            click: false
-          });
-        }
-      } else {
-        const now = Date.now();
-        if (now - state.lastMouseMoveTime > 16) {
-          state.lastMouseMoveTime = now;
-          sendRemoteInput({
-            type: 'mousemove',
-            xPercent: coords.xPercent,
-            yPercent: coords.yPercent
-          });
-        }
-      }
+    function getRelativeCoordinates(e) {
+      const rect = video.getBoundingClientRect();
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+      const y = Math.max(0, Math.min(rect.height, clientY - rect.top));
+      return {
+        pctX: +(x / rect.width).toFixed(4),
+        pctY: +(y / rect.height).toFixed(4)
+      };
     }
 
-    on(container, 'mousemove', handleMouseMove);
-    on(video, 'mousemove', handleMouseMove);
+    let lastMoveTime = 0;
+    container.addEventListener('mousemove', (e) => {
+      if (!state.activeConn) return;
+      const now = performance.now();
+      if (now - lastMoveTime < 16) return; // 60hz rate limit
+      lastMoveTime = now;
 
-    on(container, 'mousedown', (e) => {
-      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
-      state.isMouseDown = true;
-      if (container) container.focus();
-      const coords = getNormalizedCoords(e);
-      if (!coords) return;
+      const coords = getRelativeCoordinates(e);
 
       if (state.mode === 'laser') {
-        triggerLaserRipple(coords.xPercent, coords.yPercent);
-        if (state.activeConn && state.activeConn.open) {
-          state.activeConn.send({
-            type: 'laser',
-            x: coords.xPercent,
-            y: coords.yPercent,
-            click: true
-          });
-        }
+        state.activeConn.send({
+          type: 'laser',
+          x: coords.pctX,
+          y: coords.pctY
+        });
       } else {
-        sendRemoteInput({
-          type: 'mousedown',
-          button: e.button,
-          xPercent: coords.xPercent,
-          yPercent: coords.yPercent
+        state.activeConn.send({
+          type: 'mouse-move',
+          x: coords.pctX,
+          y: coords.pctY
         });
       }
     });
 
-    on(container, 'mouseup', (e) => {
-      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
-      state.isMouseDown = false;
-      if (state.mode !== 'control') return;
-      const coords = getNormalizedCoords(e);
-      if (!coords) return;
-      sendRemoteInput({
-        type: 'mouseup',
+    container.addEventListener('mousedown', (e) => {
+      if (!state.activeConn) return;
+      const coords = getRelativeCoordinates(e);
+      addClickRipple(e.clientX, e.clientY, state.mode === 'laser' ? '#ef4444' : '#38bdf8');
+
+      state.activeConn.send({
+        type: 'mouse-down',
         button: e.button,
-        xPercent: coords.xPercent,
-        yPercent: coords.yPercent
+        x: coords.pctX,
+        y: coords.pctY
       });
     });
 
-    // Window-level mouseup fallback so dragging outside video never leaves button stuck
-    window.addEventListener('mouseup', (e) => {
-      if (state.isMouseDown && state.mode === 'control') {
-        state.isMouseDown = false;
-        const coords = getNormalizedCoords(e) || { xPercent: 0.5, yPercent: 0.5 };
-        sendRemoteInput({
-          type: 'mouseup',
-          button: e.button,
-          xPercent: coords.xPercent,
-          yPercent: coords.yPercent
-        });
-      }
-    });
-
-    on(container, 'dblclick', (e) => {
-      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
-      if (state.mode !== 'control') return;
-      const coords = getNormalizedCoords(e);
-      if (!coords) return;
-      sendRemoteInput({
-        type: 'dblclick',
+    container.addEventListener('mouseup', (e) => {
+      if (!state.activeConn) return;
+      const coords = getRelativeCoordinates(e);
+      state.activeConn.send({
+        type: 'mouse-up',
         button: e.button,
-        xPercent: coords.xPercent,
-        yPercent: coords.yPercent
+        x: coords.pctX,
+        y: coords.pctY
       });
     });
 
-    on(container, 'contextmenu', (e) => {
-      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
+    container.addEventListener('wheel', (e) => {
+      if (!state.activeConn) return;
       e.preventDefault();
-      if (state.mode === 'control') {
-        const coords = getNormalizedCoords(e);
-        if (coords) {
-          sendRemoteInput({ type: 'mousedown', button: 2, xPercent: coords.xPercent, yPercent: coords.yPercent });
-          setTimeout(() => {
-            sendRemoteInput({ type: 'mouseup', button: 2, xPercent: coords.xPercent, yPercent: coords.yPercent });
-          }, 50);
-        }
-      }
-    });
-
-    on(container, 'wheel', (e) => {
-      if (e.target.closest('#sessionBar') || e.target.closest('#chatDrawer')) return;
-      if (state.mode !== 'control') return;
-      e.preventDefault();
-      sendRemoteInput({
-        type: 'wheel',
-        deltaY: e.deltaY
+      const coords = getRelativeCoordinates(e);
+      state.activeConn.send({
+        type: 'mouse-wheel',
+        deltaX: e.deltaX,
+        deltaY: e.deltaY,
+        x: coords.pctX,
+        y: coords.pctY
       });
     }, { passive: false });
 
-    // Keyboard Relay
+    // Keyboard events
     window.addEventListener('keydown', (e) => {
-      const sessionView = $('sessionView');
-      if (!sessionView || sessionView.classList.contains('hidden') || state.mode !== 'control') return;
+      if (state.isDrawerOpen || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+      if (!state.activeConn) return;
+      if (e.key === 'F11') return; // Allow fullscreen
 
-      const chatInput = $('chatInput');
-      const textInput = $('textSenderInput');
-      if (document.activeElement === chatInput || document.activeElement === textInput) return;
-
-      if (['Tab', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
-        e.preventDefault();
-      }
-
-      sendRemoteInput({
-        type: 'keydown',
+      state.activeConn.send({
+        type: 'key-down',
         key: e.key,
-        keyCode: e.keyCode || e.which,
+        code: e.code,
         ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
         shiftKey: e.shiftKey,
-        altKey: e.altKey
+        metaKey: e.metaKey
       });
     });
 
     window.addEventListener('keyup', (e) => {
-      const sessionView = $('sessionView');
-      if (!sessionView || sessionView.classList.contains('hidden') || state.mode !== 'control') return;
+      if (state.isDrawerOpen || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+      if (!state.activeConn) return;
 
-      const chatInput = $('chatInput');
-      const textInput = $('textSenderInput');
-      if (document.activeElement === chatInput || document.activeElement === textInput) return;
-
-      sendRemoteInput({
-        type: 'keyup',
+      state.activeConn.send({
+        type: 'key-up',
         key: e.key,
-        keyCode: e.keyCode || e.which
+        code: e.code,
+        ctrlKey: e.ctrlKey,
+        altKey: e.altKey,
+        shiftKey: e.shiftKey,
+        metaKey: e.metaKey
+      });
+    });
+  }
+
+  // =========================================================================
+  // Host Screen Overlay & Mirrored Cursor
+  // =========================================================================
+  function renderHostMirroredCursor(pctX, pctY, isLaser = false) {
+    const cursor = $('hostRemoteCursor');
+    if (!cursor) return;
+    cursor.classList.remove('hidden');
+
+    const screenX = pctX * window.innerWidth;
+    const screenY = pctY * window.innerHeight;
+
+    cursor.style.transform = `translate(${screenX}px, ${screenY}px)`;
+    const icon = cursor.querySelector('svg');
+    if (icon) {
+      icon.setAttribute('fill', isLaser ? '#ef4444' : '#38bdf8');
+    }
+  }
+
+  let hudTimer = null;
+  function showHostKeyHUD(keyText) {
+    const hud = $('hostKeyHUD');
+    const hudText = $('hostKeyHUDText');
+    if (!hud || !hudText) return;
+    hudText.textContent = `⌨️ ${keyText}`;
+    hud.classList.remove('hidden');
+    if (hudTimer) clearTimeout(hudTimer);
+    hudTimer = setTimeout(() => hud.classList.add('hidden'), 2000);
+  }
+
+  // Relay DataChannel input to Node.js native host bridge when running locally
+  function relayInputToHostBridge(eventData) {
+    if (!state.hasServerApi) return;
+    try {
+      fetch('/api/host-input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: eventData })
+      }).catch(() => {});
+    } catch (e) {}
+  }
+
+  // =========================================================================
+  // Server Status & OS Controller Detection
+  // =========================================================================
+  async function checkServerStatus() {
+    try {
+      const res = await fetch('/api/status');
+      if (res.ok) {
+        const data = await res.json();
+        state.hasServerApi = true;
+        const osBadge = $('osBridgeBadge');
+        const osDot = $('osBridgeDot');
+        const osText = $('osBridgeText');
+        const desc = $('nativeStatusDesc');
+
+        if (data.osControlAvailable) {
+          if (osBadge) osBadge.classList.remove('hidden');
+          if (osDot) osDot.className = 'w-2 h-2 rounded-full bg-emerald-500';
+          if (osText) osText.textContent = `Windows OS Bridge Active (${data.screenMetrics ? `${data.screenMetrics.width}x${data.screenMetrics.height}` : 'DPI Ready'})`;
+          if (desc) desc.textContent = 'Local Windows Input Bridge Active';
+        } else {
+          if (osBadge) osBadge.classList.remove('hidden');
+          if (osDot) osDot.className = 'w-2 h-2 rounded-full bg-amber-500';
+          if (osText) osText.textContent = 'WebRTC Simulated Control';
+          if (desc) desc.textContent = 'Browser Sandbox Simulation';
+        }
+      }
+    } catch (e) {
+      state.hasServerApi = false;
+      const desc = $('nativeStatusDesc');
+      if (desc) desc.textContent = 'Browser Sandbox Simulation';
+    }
+  }
+
+  // =========================================================================
+  // UI Bindings & Initialization
+  // =========================================================================
+  function updateCodeDisplay() {
+    const displayEl = $('myCodeDisplay');
+    if (displayEl) displayEl.textContent = formatDisplay(state.myCode);
+  }
+
+  function updateStatusBadge(text, type = 'ready') {
+    const badgeText = $('headerStatusText');
+    if (badgeText) badgeText.textContent = text;
+  }
+
+  function setupAutoHidingToolbar() {
+    const toolbar = $('sessionToolbar');
+    const trigger = $('toolbarTriggerZone');
+    if (!toolbar) return;
+
+    let hideTimer = null;
+
+    function showToolbar() {
+      toolbar.classList.remove('toolbar-hidden');
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        if (!state.isKeysPopoverOpen) {
+          toolbar.classList.add('toolbar-hidden');
+        }
+      }, 3000);
+    }
+
+    window.addEventListener('mousemove', (e) => {
+      if (e.clientY < 75) {
+        showToolbar();
+      }
+    });
+
+    if (trigger) {
+      trigger.addEventListener('mouseenter', showToolbar);
+    }
+    toolbar.addEventListener('mouseenter', () => {
+      if (hideTimer) clearTimeout(hideTimer);
+    });
+    toolbar.addEventListener('mouseleave', () => {
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        if (!state.isKeysPopoverOpen) {
+          toolbar.classList.add('toolbar-hidden');
+        }
+      }, 2000);
+    });
+  }
+
+  function initUI() {
+    updateCodeDisplay();
+    renderRecentSessions();
+    initLaserCanvas();
+    bindViewerInputEvents();
+    setupAutoHidingToolbar();
+    checkServerStatus();
+
+    // 1. Copy Address button
+    on($('btnCopyCode'), 'click', () => {
+      const code = state.myCode;
+      navigator.clipboard.writeText(formatDisplay(code)).then(() => {
+        const text = $('copyBtnText');
+        if (text) text.textContent = 'Copied!';
+        showToast('9-Digit address copied to clipboard!', 'success');
+        setTimeout(() => { if (text) text.textContent = 'Copy'; }, 2000);
       });
     });
 
-    // Chat
-    on($('btnOpenChat'), 'click', () => {
-      state.isChatOpen = !state.isChatOpen;
-      const drawer = $('chatDrawer');
-      if (drawer) drawer.classList.toggle('hidden', !state.isChatOpen);
-      if (state.isChatOpen) {
-        state.unreadChatCount = 0;
-        const badge = $('chatBadge');
-        if (badge) badge.classList.add('hidden');
-        const input = $('chatInput');
-        if (input) input.focus();
-      }
+    // 2. Refresh Code button
+    on($('btnNewCode'), 'click', () => {
+      state.myCode = String(Math.floor(100000000 + Math.random() * 900000000));
+      sessionStorage.setItem('omnicast_my_code', state.myCode);
+      updateCodeDisplay();
+      initPeer();
+      showToast('New 9-digit address generated.', 'info');
     });
 
-    on($('btnCloseChat'), 'click', () => {
-      state.isChatOpen = false;
-      const drawer = $('chatDrawer');
-      if (drawer) drawer.classList.add('hidden');
-    });
-
-    on($('chatForm'), 'submit', sendChatMessage);
-
-    // Global fallback: any interaction resumes video playback if suspended by browser
-    const ensureVideoPlaying = () => {
-      const video = $('remoteVideo');
-      if (video && video.paused && video.srcObject) {
-        video.play().catch(() => {});
-      }
-    };
-    window.addEventListener('click', ensureVideoPlaying);
-    window.addEventListener('keydown', ensureVideoPlaying);
-    window.addEventListener('touchstart', ensureVideoPlaying);
-
-    // File Picker (drag & drop / programmatic)
-    const picker = $('filePickerInput');
-    if (picker) {
-      on(picker, 'change', (e) => {
-        if (e.target.files && e.target.files[0]) {
-          sendFileToFriend(e.target.files[0]);
-        }
+    // 3. Remote Desk Input: auto-format 9 digits with spaces
+    const targetInput = $('targetCodeInput');
+    if (targetInput) {
+      targetInput.addEventListener('input', (e) => {
+        const clean = cleanDigits(e.target.value);
+        e.target.value = formatDisplay(clean);
       });
     }
 
-    on($('btnCloseFileBanner'), 'click', () => {
-      const banner = $('fileBanner');
-      if (banner) banner.classList.add('hidden');
+    // 4. Connect Form submission
+    on($('connectForm'), 'submit', (e) => {
+      e.preventDefault();
+      const input = $('targetCodeInput');
+      if (input) {
+        requestConnectionToRemote(input.value);
+      }
     });
 
-    // Fullscreen
+    // 5. Cancel Connection button
+    on($('btnCancelConnect'), 'click', () => {
+      stopAllSessions('Connection cancelled.');
+    });
+
+    // 6. Incoming Authorization Modal buttons
+    on($('btnAccept'), 'click', acceptIncomingConnection);
+    on($('btnDecline'), 'click', () => rejectIncomingConnection('Host declined connection.'));
+
+    // 7. Stop Session buttons (Disconnect)
+    on($('btnStopSession'), 'click', () => stopAllSessions('Disconnected from remote desk.'));
+    on($('btnHostStop'), 'click', () => stopAllSessions('Screen sharing stopped by host.'));
+
+    // 8. Special Keys Popover
+    on($('btnSpecialKeys'), 'click', (e) => {
+      e.stopPropagation();
+      const popover = $('keysDropdown');
+      if (!popover) return;
+      state.isKeysPopoverOpen = !state.isKeysPopoverOpen;
+      popover.classList.toggle('hidden', !state.isKeysPopoverOpen);
+    });
+
+    window.addEventListener('click', (e) => {
+      const popover = $('keysDropdown');
+      const btn = $('btnSpecialKeys');
+      if (popover && !popover.contains(e.target) && btn && !btn.contains(e.target)) {
+        popover.classList.add('hidden');
+        state.isKeysPopoverOpen = false;
+      }
+    });
+
+    on($('btnKeyCAD'), 'click', () => {
+      if (state.activeConn) state.activeConn.send({ type: 'special-key', key: 'CAD' });
+      showToast('Sent Ctrl+Alt+Del', 'info');
+    });
+    on($('btnKeyWin'), 'click', () => {
+      if (state.activeConn) state.activeConn.send({ type: 'special-key', key: 'WIN' });
+      showToast('Sent Windows Key', 'info');
+    });
+    on($('btnKeyAltTab'), 'click', () => {
+      if (state.activeConn) state.activeConn.send({ type: 'special-key', key: 'ALTTAB' });
+      showToast('Sent Alt+Tab', 'info');
+    });
+    on($('btnKeyEsc'), 'click', () => {
+      if (state.activeConn) state.activeConn.send({ type: 'special-key', key: 'ESC' });
+      showToast('Sent Escape', 'info');
+    });
+
+    on($('btnSendTextToRemote'), 'click', () => {
+      const input = $('textSenderInput');
+      if (input && input.value && state.activeConn) {
+        state.activeConn.send({ type: 'text-input', text: input.value });
+        showToast('Text sent to remote computer!', 'success');
+        input.value = '';
+      }
+    });
+
+    // 9. Control / Laser mode toggle
+    on($('btnToggleControl'), 'click', () => {
+      state.mode = 'control';
+      $('btnToggleControl').classList.add('active');
+      $('btnTogglePointer').classList.remove('active');
+      const video = $('remoteVideo');
+      if (video) {
+        video.classList.add('control-active');
+        video.classList.remove('laser-active');
+      }
+      showToast('Control mode: direct mouse & keyboard', 'info');
+    });
+
+    on($('btnTogglePointer'), 'click', () => {
+      state.mode = 'laser';
+      $('btnTogglePointer').classList.add('active');
+      $('btnToggleControl').classList.remove('active');
+      const video = $('remoteVideo');
+      if (video) {
+        video.classList.add('laser-active');
+        video.classList.remove('control-active');
+      }
+      showToast('Laser pointer mode active', 'info');
+    });
+
+    // 10. Aspect Ratio / Fit Toggle
+    on($('btnToggleFit'), 'click', () => {
+      state.isFitContain = !state.isFitContain;
+      const video = $('remoteVideo');
+      const label = $('fitLabel');
+      if (video) video.classList.toggle('fit-original', !state.isFitContain);
+      if (label) label.textContent = state.isFitContain ? 'Fit' : '1:1';
+      showToast(state.isFitContain ? 'Fit to Screen' : 'Original 1:1 Scale', 'info');
+    });
+
+    // 11. Fullscreen Toggle
     on($('btnFullscreen'), 'click', () => {
+      const elem = $('sessionView');
       if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
+        elem.requestFullscreen().catch(() => {});
       } else {
         document.exitFullscreen().catch(() => {});
       }
     });
 
-    // Disconnect
-    on($('btnStopSession'), 'click', () => stopAllSessions('You ended the session.'));
+    // 12. Audio Mute/Unmute
+    on($('btnToggleAudio'), 'click', () => {
+      const video = $('remoteVideo');
+      if (!video) return;
+      state.isMuted = !state.isMuted;
+      video.muted = state.isMuted;
+      const label = $('audioLabel');
+      if (label) label.textContent = state.isMuted ? 'Muted' : 'Audio On';
+      showToast(state.isMuted ? 'Audio Muted' : 'Audio Unmuted', 'info');
+    });
+
+    // 13. Screen Recording
+    on($('btnRecordScreen'), 'click', toggleScreenRecording);
+
+    // 14. Side Drawer Toggle
+    on($('btnToggleDrawer'), 'click', () => {
+      const drawer = $('sideDrawer');
+      if (!drawer) return;
+      state.isDrawerOpen = !state.isDrawerOpen;
+      drawer.classList.toggle('drawer-closed', !state.isDrawerOpen);
+      if (state.isDrawerOpen) {
+        state.unreadMessages = 0;
+        updateDrawerBadge();
+      }
+    });
+    on($('btnCloseDrawer'), 'click', () => {
+      const drawer = $('sideDrawer');
+      if (drawer) drawer.classList.add('drawer-closed');
+      state.isDrawerOpen = false;
+    });
+
+    // 15. Drawer Tabs Switcher
+    const tabs = [
+      { btn: 'tabBtnChat', pane: 'tabPaneChat' },
+      { btn: 'tabBtnFiles', pane: 'tabPaneFiles' },
+      { btn: 'tabBtnClipboard', pane: 'tabPaneClipboard' }
+    ];
+    tabs.forEach(tab => {
+      on($(tab.btn), 'click', () => {
+        tabs.forEach(t => {
+          $(t.btn).classList.toggle('active', t.btn === tab.btn);
+          $(t.pane).classList.toggle('hidden', t.pane !== tab.pane);
+        });
+      });
+    });
+
+    // 16. Chat Form Submit
+    on($('chatForm'), 'submit', (e) => {
+      e.preventDefault();
+      const input = $('chatInput');
+      if (input && input.value) {
+        sendChatMessage(input.value);
+        input.value = '';
+      }
+    });
+
+    // 17. File Upload Dropzone
+    const dropzone = $('dropzoneBox');
+    const filePicker = $('filePickerInput');
+    if (dropzone && filePicker) {
+      dropzone.addEventListener('click', () => filePicker.click());
+      filePicker.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          sendFileOverDataChannel(e.target.files[0]);
+          e.target.value = '';
+        }
+      });
+      dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.classList.add('drag-over');
+      });
+      dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+      dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('drag-over');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          sendFileOverDataChannel(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    // Full Viewport Drag-and-Drop overlay
+    const videoContainer = $('videoContainer');
+    const dropOverlay = $('dropZoneOverlay');
+    if (videoContainer && dropOverlay) {
+      window.addEventListener('dragenter', (e) => {
+        if (state.activeConn) dropOverlay.classList.remove('hidden');
+      });
+      dropOverlay.addEventListener('dragover', (e) => e.preventDefault());
+      dropOverlay.addEventListener('dragleave', () => dropOverlay.classList.add('hidden'));
+      dropOverlay.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropOverlay.classList.add('hidden');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          sendFileOverDataChannel(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    // 18. Shared Clipboard Push & Pull
+    on($('btnClipboardPush'), 'click', () => {
+      const area = $('sharedClipboardText');
+      if (area && state.activeConn) {
+        state.activeConn.send({ type: 'clipboard-push', text: area.value });
+        showToast('Clipboard text pushed to partner!', 'success');
+      }
+    });
+
+    on($('btnClipboardPull'), 'click', () => {
+      if (state.activeConn) {
+        state.activeConn.send({ type: 'clipboard-pull-req' });
+        showToast('Requesting partner clipboard...', 'info');
+      }
+    });
+
+    // 19. Clear Recent Sessions
+    on($('btnClearRecent'), 'click', () => {
+      localStorage.removeItem('omnicast_recent_sessions');
+      renderRecentSessions();
+      showToast('Recent sessions cleared.', 'info');
+    });
+
+    // 20. Quality Selector
+    on($('selectQuality'), 'change', (e) => {
+      const quality = e.target.value;
+      showToast(`Stream quality set to: ${quality.toUpperCase()}`, 'info');
+      // If active call exists, adjust sender constraints if supported
+      if (state.activeCall && state.activeCall.peerConnection) {
+        try {
+          const senders = state.activeCall.peerConnection.getSenders();
+          senders.forEach(sender => {
+            if (sender.track && sender.track.kind === 'video') {
+              const params = sender.getParameters();
+              if (params && params.encodings && params.encodings[0]) {
+                if (quality === '1080p') {
+                  params.encodings[0].maxBitrate = 4000000;
+                  params.encodings[0].scaleResolutionDownBy = 1.0;
+                } else if (quality === '720p') {
+                  params.encodings[0].maxBitrate = 1800000;
+                  params.encodings[0].scaleResolutionDownBy = 1.5;
+                } else if (quality === '480p') {
+                  params.encodings[0].maxBitrate = 600000;
+                  params.encodings[0].scaleResolutionDownBy = 2.0;
+                } else {
+                  delete params.encodings[0].maxBitrate;
+                  params.encodings[0].scaleResolutionDownBy = 1.0;
+                }
+                sender.setParameters(params).catch(() => {});
+              }
+            }
+          });
+        } catch (err) {}
+      }
+    });
+
+    // 21. Dismiss File Scheme Banner
+    on($('btnDismissScheme'), 'click', () => {
+      const b = $('fileSchemeBanner');
+      if (b) b.classList.add('hidden');
+    });
+    if (window.location.protocol === 'file:') {
+      const b = $('fileSchemeBanner');
+      if (b) b.classList.remove('hidden');
+    }
   }
 
-  // Start Application
-  function init() {
-    bindUI();
-    initLaserCanvas();
-    renderRecentChips();
-    checkLocalInputServer();
+  // Start peer and bind UI
+  window.addEventListener('DOMContentLoaded', () => {
     initPeer();
-    console.log('[OmniCast Remote Desktop] Ready & Live.');
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+    initUI();
+    if (window.lucide && window.lucide.createIcons) {
+      window.lucide.createIcons();
+    }
+  });
 
 })();

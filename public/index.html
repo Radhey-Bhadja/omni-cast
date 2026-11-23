@@ -1,842 +1,541 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmniCast — Ultra-Fast Remote Desktop & Screen Sharing</title>
+  <title>OmniCast — Ultra-Low Latency WebRTC Remote Desktop</title>
   <link rel="icon" type="image/png" href="omnicast-logo.png?v=3">
+  
+  <!-- High Performance Typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="css/style.css">
-
-  <style>
-    :root {
-      --bg-page: #f8fafc;
-      --bg-card: #ffffff;
-      --bg-subtle: #f1f5f9;
-      --bg-input: #ffffff;
-      --border-card: #e2e8f0;
-      --border-input: #cbd5e1;
-      --border-focus: #2563eb;
-
-      --text-main: #0f172a;
-      --text-muted: #475569;
-      --text-dim: #64748b;
-      --text-light: #94a3b8;
-
-      --accent-coral: #ef4444;
-      --accent-coral-hover: #dc2626;
-      --accent-coral-bg: #fef2f2;
-      --accent-coral-border: #fee2e2;
-
-      --accent-blue: #2563eb;
-      --accent-blue-hover: #1d4ed8;
-      --accent-blue-bg: #eff6ff;
-      --accent-blue-border: #dbeafe;
-
-      --accent-green: #10b981;
-      --accent-green-bg: #ecfdf5;
-
-      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-      --radius-card: 16px;
-      --radius-btn: 10px;
-      --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
-    }
-
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      min-height: 100vh;
-      background-color: var(--bg-page);
-      color: var(--text-main);
-      font-family: var(--font-main);
-      -webkit-font-smoothing: antialiased;
-      line-height: 1.5;
-      display: flex;
-      flex-direction: column;
-    }
-    .hidden { display: none !important; }
-
-    /* Notice when running via file:// */
-    .file-scheme-banner {
-      background: #fef3c7; border-bottom: 1px solid #fde68a; color: #92400e;
-      padding: 0.6rem 1.25rem; font-size: 0.82rem; text-align: center;
-      display: flex; align-items: center; justify-content: center; gap: 0.75rem;
-    }
-    .file-scheme-banner b { color: #78350f; }
-    .btn-scheme-help {
-      background: rgba(0, 0, 0, 0.06); border: 1px solid rgba(0, 0, 0, 0.12);
-      border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.75rem; color: #78350f; cursor: pointer;
-    }
-
-    /* Top Header: Brand Logo & Wordmark Aligned at Top-Left Corner */
-    .app-header {
-      background: #ffffff;
-      border-bottom: 1px solid var(--border-card);
-      position: sticky; top: 0; z-index: 50;
-    }
-    .header-inner {
-      height: 60px;
-      padding: 0 2rem;
-      display: flex; align-items: center; justify-content: flex-start;
-      max-width: 1200px; margin: 0 auto;
-    }
-    @media (max-width: 768px) {
-      .header-inner { padding: 0 1.25rem; }
-    }
-    .brand {
-      display: inline-flex; align-items: center; gap: 0.85rem;
-      text-decoration: none; user-select: none;
-    }
-    .brand-logo {
-      height: 38px;
-      width: auto;
-      max-width: 62px;
-      object-fit: contain;
-      display: block;
-    }
-    .brand-text {
-      display: flex; flex-direction: column; justify-content: center;
-      line-height: 1.15;
-    }
-    .brand-name {
-      font-size: 1.35rem; font-weight: 800; letter-spacing: -0.03em;
-      color: #0f172a; display: flex; align-items: center;
-    }
-    .brand-accent {
-      color: var(--accent-blue);
-    }
-    .brand-tag {
-      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em;
-      text-transform: uppercase; color: #64748b; margin-top: 1px;
-    }
-
-    /* Main View: Clean 2-Card Screen */
-    .main-view {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      padding: 1.5rem;
-      min-height: calc(100vh - 56px);
-    }
-    .container {
-      max-width: 900px; width: 100%; margin: 0 auto;
-      display: flex; flex-direction: column; gap: 1.5rem;
-    }
-    .cards-wrapper {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;
-    }
-    @media (max-width: 768px) {
-      .cards-wrapper { grid-template-columns: 1fr; gap: 1.25rem; }
-    }
-    .action-card {
-      background: var(--bg-card); border: 1px solid var(--border-card);
-      border-radius: var(--radius-card); padding: 2rem 1.85rem;
-      display: flex; flex-direction: column;
-      box-shadow: var(--shadow-card);
-      position: relative; overflow: hidden;
-      transition: border-color 0.15s ease;
-    }
-    .action-card:hover { border-color: #cbd5e1; }
-    .card-share { border-top: 3px solid var(--accent-coral); }
-    .card-view { border-top: 3px solid var(--accent-blue); }
-
-    .card-icon-circle {
-      width: 48px; height: 48px; border-radius: 12px;
-      display: flex; align-items: center; justify-content: center; margin-bottom: 1.15rem;
-    }
-    .icon-coral {
-      background: var(--accent-coral-bg); color: var(--accent-coral);
-      border: 1px solid var(--accent-coral-border);
-    }
-    .icon-blue {
-      background: var(--accent-blue-bg); color: var(--accent-blue);
-      border: 1px solid var(--accent-blue-border);
-    }
-
-    .card-headings h2 {
-      font-size: 1.25rem; font-weight: 700; color: var(--text-main);
-      margin-bottom: 0.35rem; letter-spacing: -0.01em;
-    }
-    .card-headings p {
-      font-size: 0.86rem; color: var(--text-muted); margin-bottom: 1.5rem; line-height: 1.45;
-    }
-
-    /* Code Display Box */
-    .code-box {
-      display: flex; align-items: center; justify-content: space-between;
-      background: var(--bg-subtle); border: 1px solid var(--border-card);
-      border-radius: var(--radius-btn); padding: 0.8rem 1.15rem; margin-bottom: 1.25rem;
-    }
-    .code-number {
-      font-family: var(--font-mono); font-size: 1.8rem; font-weight: 700;
-      letter-spacing: 0.12em; color: var(--text-main);
-    }
-    .btn-copy {
-      display: inline-flex; align-items: center; gap: 0.4rem;
-      background: #ffffff; color: var(--text-main); border: 1px solid var(--border-input);
-      border-radius: 8px; padding: 0.5rem 0.9rem; font-size: 0.82rem; font-weight: 600;
-      cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease;
-    }
-    .btn-copy:hover { background: #f8fafc; border-color: #94a3b8; }
-    .btn-copy.copied { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
-
-    .card-hint {
-      display: flex; align-items: center; justify-content: space-between;
-      font-size: 0.8rem; color: var(--text-muted); margin-top: auto;
-    }
-    .link-btn {
-      background: none; border: none; color: var(--accent-blue);
-      font-size: 0.8rem; cursor: pointer; text-decoration: underline; font-weight: 500;
-    }
-    .link-btn:hover { color: var(--accent-blue-hover); }
-
-    /* Connect Form */
-    .connect-form { display: flex; flex-direction: column; gap: 0.95rem; margin-bottom: 1.25rem; }
-    .code-input {
-      width: 100%; background: #ffffff; border: 1.5px solid var(--border-input);
-      border-radius: var(--radius-btn); padding: 0.85rem 1rem; color: var(--text-main);
-      font-family: var(--font-mono); font-size: 1.65rem; font-weight: 700;
-      letter-spacing: 0.12em; text-align: center; outline: none;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-    .code-input:focus { border-color: var(--accent-blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
-    .code-input::placeholder { color: var(--text-light); }
-    .btn-main-connect {
-      width: 100%; padding: 0.92rem; border-radius: var(--radius-btn); border: none;
-      background: var(--accent-blue); color: #ffffff; font-size: 1rem; font-weight: 600;
-      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-      transition: background-color 0.15s ease;
-    }
-    .btn-main-connect:hover { background: var(--accent-blue-hover); }
-    .btn-main-connect:disabled { opacity: 0.65; cursor: not-allowed; }
-
-    .recent-wrap { margin-top: 1rem; padding-top: 0.85rem; border-top: 1px solid var(--border-card); }
-    .recent-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.45rem; }
-    .recent-chips { display: flex; flex-wrap: wrap; gap: 0.45rem; }
-    .recent-chip {
-      background: var(--bg-subtle); border: 1px solid var(--border-card);
-      border-radius: 6px; padding: 0.25rem 0.65rem; font-family: var(--font-mono);
-      font-size: 0.8rem; color: var(--text-muted); cursor: pointer; transition: all 0.15s ease;
-    }
-    .recent-chip:hover { background: var(--accent-blue-bg); border-color: var(--accent-blue-border); color: var(--accent-blue); }
-
-    /* Simple 3-Step Guide */
-    .simple-steps {
-      display: flex; align-items: center; justify-content: center; gap: 1.25rem;
-      padding: 0.85rem 1.75rem; background: #ffffff;
-      border: 1px solid var(--border-card); border-radius: 9999px;
-      font-size: 0.82rem; color: var(--text-muted);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-    }
-    @media (max-width: 768px) {
-      .simple-steps { flex-direction: column; gap: 0.75rem; border-radius: 16px; align-items: flex-start; }
-      .step-arrow { display: none; }
-    }
-    .step-item { display: flex; align-items: center; gap: 0.5rem; }
-    .step-num {
-      width: 22px; height: 22px; border-radius: 50%; background: var(--bg-subtle);
-      border: 1px solid var(--border-card); color: var(--text-main); font-weight: 700;
-      font-size: 0.75rem; display: flex; align-items: center; justify-content: center;
-    }
-    .step-arrow { color: var(--text-light); font-weight: 600; }
-
-    /* Laptop Screen Optimization */
-    @media (max-height: 820px) {
-      .main-view { padding: 0.85rem 1.25rem; }
-      .container { gap: 1rem; }
-      .action-card { padding: 1.35rem 1.45rem; }
-      .card-icon-circle { width: 40px; height: 40px; margin-bottom: 0.75rem; border-radius: 10px; }
-      .card-icon-circle svg { width: 22px; height: 22px; }
-      .card-headings h2 { font-size: 1.15rem; margin-bottom: 0.25rem; }
-      .card-headings p { font-size: 0.8rem; margin-bottom: 1rem; line-height: 1.35; }
-      .code-box { padding: 0.65rem 0.95rem; margin-bottom: 0.85rem; }
-      .code-number { font-size: 1.55rem; }
-      .btn-copy { padding: 0.45rem 0.8rem; font-size: 0.8rem; }
-      .code-input { padding: 0.75rem 0.85rem; font-size: 1.45rem; }
-      .btn-main-connect { padding: 0.8rem; font-size: 0.95rem; }
-      .connect-form { gap: 0.75rem; margin-bottom: 0.85rem; }
-      .recent-wrap { margin-top: 0.75rem; padding-top: 0.65rem; }
-      .simple-steps { padding: 0.65rem 1.25rem; font-size: 0.76rem; gap: 0.85rem; }
-      .step-num { width: 19px; height: 19px; font-size: 0.7rem; }
-    }
-
-    /* Active Session View */
-    .session-view {
-      position: fixed; inset: 0; z-index: 100; background: #000;
-      display: flex; flex-direction: column; overflow: hidden;
-    }
-    .video-container {
-      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #000;
-    }
-    .remote-video { width: 100%; height: 100%; object-fit: contain; cursor: default; }
-    .remote-video.fit-stretch { object-fit: fill !important; }
-    .remote-video.control-active { cursor: crosshair; }
-    .laser-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 105; }
-    .loader-overlay {
-      position: absolute; inset: 0; background: rgba(15, 23, 42, 0.95);
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      z-index: 110; text-align: center; padding: 2rem;
-    }
-    .loader-circle {
-      width: 44px; height: 44px; border: 3px solid rgba(255, 255, 255, 0.15);
-      border-top-color: var(--accent-blue); border-radius: 50%;
-      animation: spin 0.8s linear infinite; margin-bottom: 1.25rem;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .loader-overlay h3 { font-size: 1.35rem; font-weight: 700; color: #fff; margin-bottom: 0.4rem; }
-    .loader-overlay p { font-size: 0.95rem; color: #94a3b8; margin-bottom: 1.5rem; }
-    .btn-cancel {
-      background: #334155; color: #fff; border: none; border-radius: 8px;
-      padding: 0.6rem 1.25rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
-    }
-    .btn-cancel:hover { background: #475569; }
-
-    /* Drag & Drop File Overlay */
-    .drop-zone-overlay {
-      position: absolute; inset: 0; background: rgba(37, 99, 235, 0.85);
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center; z-index: 120;
-      color: #fff; font-size: 1.35rem; font-weight: 700; gap: 0.75rem;
-      border: 3px dashed #fff; border-radius: 16px; margin: 1.5rem;
-      pointer-events: none;
-    }
-
-    /* Session Floating Bottom Bar */
-    .session-bar { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%); z-index: 130; max-width: 95vw; }
-    .bar-pill {
-      display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 1rem;
-      background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(12px);
-      border: 1px solid rgba(0, 0, 0, 0.12); border-radius: 9999px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18); flex-wrap: wrap; justify-content: center;
-    }
-    .bar-user-info { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; color: #0f172a; }
-    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); }
-    .ping-badge {
-      font-family: var(--font-mono); font-size: 0.72rem; padding: 0.15rem 0.45rem;
-      background: #f1f5f9; border-radius: 6px; color: #475569;
-    }
-    .bar-buttons { display: flex; align-items: center; gap: 0.4rem; position: relative; flex-wrap: wrap; }
-    .pill-btn {
-      display: inline-flex; align-items: center; gap: 0.35rem;
-      background: #f1f5f9; color: #0f172a;
-      border: 1px solid var(--border-card); border-radius: 9999px;
-      padding: 0.45rem 0.8rem; font-size: 0.82rem; font-weight: 600; cursor: pointer;
-      position: relative; transition: background-color 0.15s ease;
-    }
-    .pill-btn:hover { background: #e2e8f0; }
-    .pill-btn.active {
-      background: var(--accent-blue-bg); border-color: var(--accent-blue-border); color: var(--accent-blue);
-    }
-    .badge-unread {
-      background: var(--accent-coral); color: #fff; font-size: 0.68rem; font-weight: 800;
-      padding: 0.1rem 0.4rem; border-radius: 9999px;
-    }
-    .btn-leave {
-      display: inline-flex; align-items: center; gap: 0.4rem;
-      background: var(--accent-coral); color: #fff; border: none; border-radius: 9999px;
-      padding: 0.48rem 0.95rem; font-size: 0.82rem; font-weight: 600; cursor: pointer;
-      transition: background-color 0.15s ease;
-    }
-    .btn-leave:hover { background: var(--accent-coral-hover); }
-
-    /* Host Floating Notice */
-    .host-notice { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 150; }
-    .host-notice-box {
-      display: flex; align-items: center; gap: 1rem; background: #ffffff;
-      border: 1px solid var(--border-card); border-radius: 12px;
-      padding: 0.75rem 1.25rem; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    }
-    .red-record-dot {
-      width: 10px; height: 10px; border-radius: 50%; background: var(--accent-coral);
-    }
-    .host-notice-title { font-size: 0.85rem; font-weight: 700; color: #0f172a; }
-    .host-notice-sub { font-size: 0.72rem; color: #64748b; }
-    .btn-host-stop {
-      background: var(--accent-coral); color: #fff; border: none; border-radius: 8px;
-      padding: 0.45rem 0.85rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;
-    }
-    .btn-host-stop:hover { background: var(--accent-coral-hover); }
-
-    /* Host Remote Cursor Simulation */
-    .remote-host-cursor {
-      position: fixed; pointer-events: none; z-index: 9999;
-      transform: translate(-2px, -2px); transition: transform 0.04s linear;
-    }
-    .cursor-pointer-icon { width: 24px; height: 24px; }
-    .cursor-tag {
-      background: var(--accent-coral); color: #fff; font-size: 0.7rem; font-weight: 700;
-      padding: 0.15rem 0.45rem; border-radius: 4px; position: absolute; left: 16px; top: 14px;
-      white-space: nowrap;
-    }
-    .host-key-hud {
-      position: fixed; bottom: 5.5rem; left: 50%; transform: translateX(-50%);
-      background: #0f172a; border-radius: 9999px; padding: 0.4rem 1.1rem;
-      font-family: var(--font-mono); font-size: 0.82rem; font-weight: 700; color: #38bdf8;
-      z-index: 9999; pointer-events: none;
-    }
-    .keys-popover {
-      position: absolute; bottom: 3.8rem; right: 0; background: #ffffff;
-      border: 1px solid var(--border-card); border-radius: 12px; padding: 0.6rem;
-      display: flex; flex-direction: column; gap: 0.4rem; width: 230px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12); z-index: 150;
-    }
-    .key-btn {
-      background: #f8fafc; border: 1px solid var(--border-card);
-      border-radius: 8px; color: #0f172a; font-size: 0.82rem; font-weight: 600;
-      padding: 0.45rem 0.75rem; text-align: left; cursor: pointer; transition: background-color 0.12s ease;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .key-btn:hover { background: var(--accent-blue-bg); color: var(--accent-blue); }
-    .key-badge {
-      font-family: var(--font-mono); font-size: 0.68rem; background: #e2e8f0;
-      padding: 0.1rem 0.35rem; border-radius: 4px; color: #475569;
-    }
-    .text-sender-row { display: flex; gap: 0.35rem; margin-top: 0.35rem; }
-    .text-sender-input {
-      flex: 1; background: #ffffff; border: 1px solid var(--border-input);
-      border-radius: 6px; padding: 0.35rem 0.5rem; font-size: 0.78rem; color: #0f172a; outline: none;
-    }
-    .btn-send-text {
-      background: var(--accent-blue); border: none; border-radius: 6px;
-      color: #fff; font-size: 0.75rem; font-weight: 600; padding: 0 0.6rem; cursor: pointer;
-    }
-
-    /* Host Test Notepad */
-    .host-test-pad {
-      position: fixed; bottom: 1.5rem; left: 1.5rem; z-index: 90;
-      background: #ffffff; border: 1px solid var(--border-card); border-radius: 12px;
-      padding: 0.85rem; width: 280px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-    }
-    .test-pad-title { font-size: 0.75rem; font-weight: 700; color: #475569; margin-bottom: 0.4rem; display: flex; justify-content: space-between; }
-    .test-pad-input {
-      width: 100%; height: 50px; background: #f8fafc; border: 1px solid var(--border-input);
-      border-radius: 6px; padding: 0.4rem; color: #2563eb; font-family: var(--font-mono);
-      font-size: 0.8rem; resize: none; outline: none;
-    }
-
-    /* Incoming Modal */
-    .modal-backdrop {
-      position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
-      backdrop-filter: blur(4px); z-index: 200;
-      display: flex; align-items: center; justify-content: center; padding: 1.5rem;
-    }
-    .modal-card {
-      background: #ffffff; border: 1px solid var(--border-card); border-radius: 16px;
-      max-width: 440px; width: 100%; padding: 2rem; text-align: center;
-      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
-    }
-    .modal-emoji { font-size: 2.5rem; margin-bottom: 0.75rem; }
-    .modal-card h3 { font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-bottom: 0.5rem; line-height: 1.3; }
-    .highlight-code {
-      font-family: var(--font-mono); color: var(--accent-coral); font-size: 1.15rem;
-      background: var(--accent-coral-bg); padding: 0.15rem 0.5rem; border-radius: 6px;
-    }
-    .modal-explainer { font-size: 0.82rem; color: #64748b; margin: 1rem 0 1.5rem; line-height: 1.45; }
-    .modal-buttons { display: flex; gap: 0.75rem; }
-    .btn-modal-decline {
-      flex: 1; background: #f1f5f9; color: #0f172a; border: 1px solid var(--border-card);
-      border-radius: 10px; padding: 0.8rem; font-size: 0.92rem; font-weight: 600; cursor: pointer;
-    }
-    .btn-modal-decline:hover { background: #e2e8f0; }
-    .btn-modal-accept {
-      flex: 1.5; background: var(--accent-green); color: #ffffff; border: none;
-      border-radius: 10px; padding: 0.8rem; font-size: 0.92rem; font-weight: 600;
-      cursor: pointer;
-    }
-    .btn-modal-accept:hover { filter: brightness(0.95); }
-
-    /* Chat Drawer */
-    .chat-drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; width: 340px; max-width: 90vw;
-      background: #ffffff; border-left: 1px solid var(--border-card); z-index: 160;
-      display: flex; flex-direction: column; box-shadow: -10px 0 30px rgba(0, 0, 0, 0.08);
-    }
-    .chat-header {
-      padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-card);
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .chat-title { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; font-size: 0.92rem; color: #0f172a; }
-    .green-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green); }
-    .btn-close-chat { background: none; border: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer; }
-    .btn-close-chat:hover { color: #0f172a; }
-    .chat-messages { flex: 1; overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
-    .chat-welcome { text-align: center; font-size: 0.82rem; color: #94a3b8; padding: 1rem 0; }
-    .msg-bubble {
-      max-width: 80%; padding: 0.6rem 0.9rem; border-radius: 12px; font-size: 0.88rem;
-      line-height: 1.4; word-break: break-word;
-    }
-    .msg-bubble.mine { align-self: flex-end; background: var(--accent-blue); color: #fff; border-bottom-right-radius: 4px; }
-    .msg-bubble.theirs { align-self: flex-start; background: #f1f5f9; color: #0f172a; border-bottom-left-radius: 4px; }
-    .chat-input-row { padding: 0.85rem 1rem; border-top: 1px solid var(--border-card); display: flex; gap: 0.5rem; }
-    .chat-input-row input {
-      flex: 1; background: #f8fafc; border: 1px solid var(--border-input);
-      border-radius: 8px; padding: 0.6rem 0.85rem; color: #0f172a; font-size: 0.88rem; outline: none;
-    }
-    .chat-input-row input:focus { border-color: var(--accent-blue); }
-    .btn-send-chat {
-      background: var(--accent-blue); color: #fff; border: none; border-radius: 8px;
-      padding: 0.6rem 0.95rem; font-size: 0.88rem; font-weight: 600; cursor: pointer;
-    }
-
-    /* File Progress Banner */
-    .file-banner { position: fixed; bottom: 6rem; right: 2rem; z-index: 140; }
-    .file-banner-content {
-      display: flex; align-items: center; gap: 0.85rem; background: #ffffff;
-      border: 1px solid var(--border-card); border-radius: 12px;
-      padding: 0.85rem 1.15rem; width: 310px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    }
-    .file-icon { font-size: 1.7rem; }
-    .file-info { flex: 1; overflow: hidden; }
-    .file-name {
-      font-size: 0.82rem; font-weight: 600; color: #0f172a; white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.3rem;
-    }
-    .progress-bar { width: 100%; height: 5px; background: #f1f5f9; border-radius: 3px; overflow: hidden; margin-bottom: 0.25rem; }
-    .progress-fill { height: 100%; background: var(--accent-green); transition: width 0.1s linear; }
-    .file-status { font-size: 0.72rem; color: #64748b; }
-    .btn-close-file { background: none; border: none; color: #94a3b8; font-size: 1rem; cursor: pointer; }
-
-    /* Toast */
-    .toast-container {
-      position: fixed; top: 1.5rem; right: 1.5rem; z-index: 300;
-      display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none;
-    }
-    .toast {
-      pointer-events: auto; background: #ffffff; border: 1px solid var(--border-card);
-      border-radius: 10px; padding: 0.75rem 1.15rem; font-size: 0.88rem; font-weight: 600;
-      color: #0f172a; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-      transition: opacity 0.2s ease;
-    }
-    .toast-success { border-left: 4px solid var(--accent-green); }
-    .toast-error { border-left: 4px solid var(--accent-coral); }
-    .toast-warning { border-left: 4px solid #f59e0b; }
-    .toast-info { border-left: 4px solid var(--accent-blue); }
-
-    /* Spinner */
-    .spinner {
-      width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,0.3);
-      border-top-color: #fff; border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-  </style>
-</head>
-<body>
+  <!-- Tailwind CSS & Lucide Icons -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    // Enforce Clean Light Theme
-    (function() {
-      try {
-        localStorage.setItem('omnicast_theme', 'light');
-        document.body && document.body.classList.add('light-theme');
-      } catch(e) {}
-    })();
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              950: '#020617',
+              900: '#0f172a',
+              850: '#131b2e',
+              800: '#1e293b',
+              700: '#334155'
+            },
+            anydesk: {
+              DEFAULT: '#ef4444',
+              hover: '#dc2626',
+              light: 'rgba(239, 68, 68, 0.12)',
+              border: 'rgba(239, 68, 68, 0.35)'
+            }
+          },
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    };
   </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Production Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans select-none">
 
   <!-- Notice when running via file:// -->
   <div id="fileSchemeBanner" class="file-scheme-banner hidden">
-    <span>⚠️ Running directly via file://. For live OS mouse & keyboard control without browser limits, run <b>start.bat</b> or use http://localhost:3000!</span>
+    <span>⚠️ You opened OmniCast directly as a local file (<code>file://</code>). WebRTC requires an HTTP/HTTPS origin. Run <b>start.bat</b> or use a local server.</span>
     <button id="btnDismissScheme" class="btn-scheme-help" type="button">Dismiss</button>
   </div>
 
-  <!-- Top Header: Logo Icon & OmniCast Wordmark at Top-Left Corner -->
+  <!-- TOP HEADER NAVIGATION -->
   <header class="app-header">
     <div class="header-inner">
-      <div class="brand">
-        <img src="omnicast-logo.png?v=3" alt="OmniCast" class="brand-logo">
+      <a href="./" class="brand">
+        <img src="omnicast-logo.png?v=3" alt="OmniCast Logo" class="brand-logo" onerror="this.onerror=null; this.src='logo.png';">
         <div class="brand-text">
-          <span class="brand-name">Omni<span class="brand-accent">Cast</span></span>
-          <span class="brand-tag">Web-Based Remote Access</span>
+          <div class="brand-name">Omni<span class="accent-red">Cast</span></div>
+          <div class="brand-tag">Remote Desktop WebRTC</div>
         </div>
+      </a>
+
+      <div class="header-actions">
+        <div id="headerStatusBadge" class="status-pill">
+          <span class="status-dot"></span>
+          <span id="headerStatusText">Network Ready</span>
+        </div>
+
+        <div id="osBridgeBadge" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+          <span id="osBridgeDot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span id="osBridgeText">Native Host OS Bridge</span>
+        </div>
+
+        <a href="https://github.com/Radhey-Bhadja/omni-cast" target="_blank" rel="noopener noreferrer" class="github-link" title="View Source on GitHub">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+        </a>
       </div>
     </div>
   </header>
 
-  <!-- Main View: Dead Simple 2-Card Screen (Laptop Optimized) -->
+  <!-- MAIN LOBBY VIEW -->
   <main id="mainView" class="main-view">
     <div class="container">
-
+      
+      <!-- CARDS WRAPPER: Your Address + Remote Desk -->
       <div class="cards-wrapper">
-        
-        <!-- CARD 1: SHARE YOUR SCREEN (This Desk) -->
-        <div class="action-card card-share">
-          <div class="card-icon-circle icon-coral">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+
+        <!-- CARD 1: This Computer / Share Screen -->
+        <section class="action-card card-share">
+          <div class="card-header-badge badge-share">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+            <span>This Computer</span>
           </div>
 
-          <div class="card-headings">
-            <h2>This Desk (Share Screen)</h2>
-            <p>Tell your partner this 6-digit number so they can see and control your computer.</p>
-          </div>
+          <h2 class="card-title">Your Address</h2>
+          <p class="card-subtitle">Provide this 9-digit address to your remote partner so they can request connection to your desktop.</p>
 
-          <!-- Big Bold Code Box -->
-          <div class="code-box">
-            <div id="myCodeDisplay" class="code-number">--- ---</div>
-            <button id="btnCopyCode" class="btn-copy" type="button">
-              <svg id="copyIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              <span id="copyBtnText">Copy Code</span>
+          <div class="code-display-box">
+            <div id="myCodeDisplay" class="code-number">--- --- ---</div>
+            <button id="btnCopyCode" class="btn-copy" type="button" title="Copy Address to Clipboard">
+              <svg id="copyIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span id="copyBtnText">Copy</span>
             </button>
           </div>
 
-          <!-- Instant synchronous fallback so the code NEVER displays --- --- -->
-          <script>
-            (function() {
-              try {
-                var code = sessionStorage.getItem('omnicast_my_code');
-                if (!code || code.length !== 6) {
-                  code = String(Math.floor(100000 + Math.random() * 900000));
-                  try {
-                    sessionStorage.setItem('omnicast_my_code', code);
-                  } catch(e) {}
-                }
-                var disp = document.getElementById('myCodeDisplay');
-                if (disp) disp.textContent = code.slice(0, 3) + ' ' + code.slice(3);
-              } catch(e) {}
-            })();
-          </script>
-
-          <div class="card-hint">
-            <span id="statusLabel">Ready for incoming connections</span>
-            <button id="btnNewCode" class="link-btn" type="button">Get new number</button>
+          <div class="status-row">
+            <div class="status-indicator">
+              <span class="status-dot"></span>
+              <span id="statusLabel">Ready for incoming connections</span>
+            </div>
+            <button id="btnNewCode" class="link-btn" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+              <span>Refresh ID</span>
+            </button>
           </div>
-        </div>
+        </section>
 
-        <!-- CARD 2: CONNECT TO PARTNER (Remote Desk) -->
-        <div class="action-card card-view">
-          <div class="card-icon-circle icon-blue">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        <!-- CARD 2: Connect to Remote Desk -->
+        <section class="action-card card-view">
+          <div class="card-header-badge badge-view">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <span>Remote Desk</span>
           </div>
 
-          <div class="card-headings">
-            <h2>Remote Desk (Control Partner)</h2>
-            <p>Type your partner's 6-digit number below to view and control their computer.</p>
-          </div>
+          <h2 class="card-title">Control Remote Desk</h2>
+          <p class="card-subtitle">Enter the 9-digit address of the remote computer you wish to view and interact with in real time.</p>
 
-          <!-- Code Input Box -->
-          <form id="connectForm" class="connect-form">
-            <div class="input-container">
-              <input 
-                type="text" 
-                id="targetCodeInput" 
-                class="code-input" 
-                placeholder="482 910" 
-                maxlength="7" 
-                autocomplete="off" 
-                spellcheck="false"
-                inputmode="numeric"
-              >
+          <form id="connectForm" class="connect-form" autocomplete="off">
+            <div>
+              <div class="input-label">
+                <span>Remote Address</span>
+                <span class="text-xs text-slate-500 font-mono">9-digit ID</span>
+              </div>
+              <div class="input-container">
+                <div class="input-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                </div>
+                <input 
+                  type="text" 
+                  id="targetCodeInput" 
+                  class="target-input" 
+                  placeholder="e.g. 482 910 334" 
+                  maxlength="11"
+                  inputmode="numeric"
+                  spellcheck="false"
+                  required
+                >
+              </div>
             </div>
 
             <button type="submit" id="btnConnect" class="btn-main-connect">
-              <span id="connectBtnText">Connect Now</span>
-              <div id="connectSpinner" class="spinner hidden"></div>
+              <span id="connectBtnText">Connect</span>
+              <svg id="connectArrowIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+              <div id="connectSpinner" class="loader-circle hidden !w-5 !h-5 !border-2"></div>
             </button>
           </form>
 
-          <div class="card-hint">
-            <span>Direct P2P Google STUN encrypted</span>
+          <div class="status-row">
+            <span class="text-xs text-slate-500">End-to-End Encrypted via WebRTC Datachannel & MediaStream</span>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- SECURITY & PERMISSIONS PANEL -->
+      <section class="permissions-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            <span>Session Permissions & Security</span>
+          </div>
+          <span class="panel-subtitle">Configure allowed capabilities for remote partners</span>
+        </div>
+
+        <div class="permissions-grid">
+          <div class="perm-item">
+            <div class="perm-info">
+              <span class="perm-label">Audio Sharing</span>
+              <span class="perm-desc">Transmit host system sound</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="permAudio" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="perm-item">
+            <div class="perm-info">
+              <span class="perm-label">Remote Pointer & Annotations</span>
+              <span class="perm-desc">Simulated cursor & laser pointer</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="permPointer" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="perm-item">
+            <div class="perm-info">
+              <span class="perm-label">P2P File Transfer</span>
+              <span class="perm-desc">Bidirectional 16KB chunking</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="permFiles" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="perm-item">
+            <div class="perm-info">
+              <span class="perm-label">Clipboard Sync</span>
+              <span class="perm-desc">Bidirectional push/pull clipboard</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="permClipboard" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="perm-item">
+            <div class="perm-info">
+              <span class="perm-label">Native OS Control</span>
+              <span class="perm-desc" id="nativeStatusDesc">Local Node.js Host Bridge</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="permNativeControl" checked>
+              <span class="slider"></span>
+            </label>
           </div>
         </div>
+      </section>
 
-      </div>
+      <!-- RECENT SESSIONS LIST -->
+      <section class="recent-sessions-panel">
+        <div class="recent-header">
+          <div class="recent-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>Recent Sessions</span>
+          </div>
+          <button id="btnClearRecent" class="btn-clear-recent" type="button">Clear History</button>
+        </div>
 
-      <!-- Quick 3-step guide for teachers / beginners -->
-      <div class="simple-steps">
-        <div class="step-item">
-          <span class="step-num">1</span>
-          <span>Open OmniCast on both devices</span>
+        <div id="recentSessionsList" class="recent-list">
+          <div class="recent-empty">No recent connections yet. Past sessions will appear here for fast reconnect.</div>
         </div>
-        <div class="step-arrow">→</div>
-        <div class="step-item">
-          <span class="step-num">2</span>
-          <span>Enter partner's 6-digit Desk Code</span>
-        </div>
-        <div class="step-arrow">→</div>
-        <div class="step-item">
-          <span class="step-num">3</span>
-          <span>Click Allow on host to start viewing & controlling</span>
-        </div>
-      </div>
+      </section>
 
     </div>
   </main>
 
-  <!-- FULLSCREEN SESSION VIEWER (When Connected) -->
+  <!-- ==========================================================================
+       ACTIVE REMOTE SESSION VIEW (Full Viewport + Floating Top Toolbar)
+       ========================================================================== -->
   <div id="sessionView" class="session-view hidden">
     
-    <!-- Remote Video Canvas Container -->
+    <!-- Top Hover Trigger Zone -->
+    <div id="toolbarTriggerZone" class="toolbar-trigger-zone"></div>
+
+    <!-- Floating Top Action Toolbar (Auto-Hiding) -->
+    <div id="sessionToolbar" class="floating-top-toolbar">
+      
+      <!-- Live Stats Pill -->
+      <div id="sessionStatsPill" class="stats-pill" title="WebRTC RTCPeerConnection Live Statistics">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>RTT: <span id="statRtt" class="stats-stat-val">--</span>ms</span>
+        <span>|</span>
+        <span><span id="statFps" class="stats-stat-fps">--</span> FPS</span>
+        <span>|</span>
+        <span><span id="statBitrate" class="stats-stat-val">--</span></span>
+        <span>|</span>
+        <span id="statRes" class="text-slate-300">1080p</span>
+      </div>
+
+      <!-- Quality Selector -->
+      <select id="selectQuality" class="quality-select" title="Stream Resolution & Bitrate">
+        <option value="auto">Auto Quality</option>
+        <option value="1080p">High (1080p@60)</option>
+        <option value="720p">Balanced (720p@30)</option>
+        <option value="480p">Low Bandwidth</option>
+      </select>
+
+      <!-- Control / Laser Toggle -->
+      <button id="btnToggleControl" class="tool-btn active" type="button" title="Interactive Mouse & Keyboard Mode">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7 18 3-7 7-3L3 3z"></path></svg>
+        <span>Control</span>
+      </button>
+
+      <button id="btnTogglePointer" class="tool-btn" type="button" title="Laser Pointer & Annotations Mode">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line></svg>
+        <span>Laser</span>
+      </button>
+
+      <!-- Special Keys Popover Trigger -->
+      <div class="relative">
+        <button id="btnSpecialKeys" class="tool-btn" type="button" title="Send Special Keyboard Shortcuts">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><line x1="6" y1="8" x2="6" y2="8"></line><line x1="10" y1="8" x2="10" y2="8"></line><line x1="14" y1="8" x2="14" y2="8"></line><line x1="18" y1="8" x2="18" y2="8"></line><line x1="6" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="18" y2="12"></line><line x1="7" y1="16" x2="17" y2="16"></line></svg>
+          <span>Keys</span>
+        </button>
+
+        <!-- Popover Content -->
+        <div id="keysDropdown" class="keys-popover hidden">
+          <button id="btnKeyCAD" class="key-item-btn" type="button">
+            <span>Ctrl + Alt + Del</span>
+            <span class="key-badge">Task Mgr</span>
+          </button>
+          <button id="btnKeyWin" class="key-item-btn" type="button">
+            <span>Windows Key</span>
+            <span class="key-badge">Start</span>
+          </button>
+          <button id="btnKeyAltTab" class="key-item-btn" type="button">
+            <span>Alt + Tab</span>
+            <span class="key-badge">Switch</span>
+          </button>
+          <button id="btnKeyEsc" class="key-item-btn" type="button">
+            <span>Escape</span>
+            <span class="key-badge">Esc</span>
+          </button>
+          <div class="keys-input-row">
+            <input type="text" id="textSenderInput" class="keys-text-input" placeholder="Type text to send..." autocomplete="off">
+            <button id="btnSendTextToRemote" class="btn-send-keys-text" type="button">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen Recording Button -->
+      <button id="btnRecordScreen" class="btn-record" type="button" title="Record Incoming Session to .webm">
+        <span class="rec-dot"></span>
+        <span id="recordBtnLabel">Record</span>
+      </button>
+
+      <!-- Audio Mute/Unmute -->
+      <button id="btnToggleAudio" class="tool-btn" type="button" title="Mute/Unmute Audio">
+        <svg id="audioIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+        <span id="audioLabel">Muted</span>
+      </button>
+
+      <!-- Fit vs Original Size -->
+      <button id="btnToggleFit" class="tool-btn" type="button" title="Toggle Aspect Fit / 1:1 Scale">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+        <span id="fitLabel">Fit</span>
+      </button>
+
+      <!-- Fullscreen -->
+      <button id="btnFullscreen" class="tool-btn" type="button" title="Full Screen">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+      </button>
+
+      <!-- Side Drawer Toggle -->
+      <button id="btnToggleDrawer" class="tool-btn relative" type="button" title="Open Tools & Chat Panel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line></svg>
+        <span>Tools</span>
+        <span id="drawerBadge" class="badge-unread hidden">0</span>
+      </button>
+
+      <!-- Disconnect Button -->
+      <button id="btnStopSession" class="btn-disconnect" type="button">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+        <span>Disconnect</span>
+      </button>
+
+    </div>
+
+    <!-- Video Canvas Container -->
     <div id="videoContainer" class="video-container" tabindex="0">
       <video id="remoteVideo" autoplay playsinline muted class="remote-video control-active"></video>
       <canvas id="laserCanvas" class="laser-canvas"></canvas>
 
-      <!-- Drag & Drop File Transfer Overlay -->
+      <!-- Drag & Drop File Overlay -->
       <div id="dropZoneOverlay" class="drop-zone-overlay hidden">
-        <span>📁 Drop file to send to remote computer</span>
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        <span>Drop file to stream to remote computer (16KB chunks)</span>
       </div>
 
       <!-- Connecting Overlay -->
       <div id="loaderOverlay" class="loader-overlay">
         <div class="loader-circle"></div>
-        <h3 id="loaderTitle">Connecting to partner...</h3>
-        <p id="loaderSubtitle">Waiting for them to click "Allow" on their screen</p>
-        <button id="btnCancelConnect" class="btn-cancel" type="button">Cancel</button>
-      </div>
-    </div>
-
-    <!-- Floating Clean Bottom Bar -->
-    <div id="sessionBar" class="session-bar">
-      <div class="bar-pill">
-        
-        <div class="bar-user-info">
-          <span class="live-dot"></span>
-          <span id="sessionPartnerName">Remote Screen</span>
-          <span id="sessionPing" class="ping-badge">-- ms</span>
-        </div>
-
-        <div class="bar-buttons">
-          <!-- Control Mode Toggle -->
-          <button id="btnToggleControl" class="pill-btn active" type="button" title="Live Mouse & Keyboard Control">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"></rect><line x1="6" y1="12" x2="10" y2="12"></line><line x1="8" y1="10" x2="8" y2="14"></line><circle cx="15" cy="11" r="1"></circle><circle cx="18" cy="13" r="1"></circle></svg>
-            <span>Control</span>
-          </button>
-
-          <!-- Laser Pointer Toggle -->
-          <button id="btnTogglePointer" class="pill-btn" type="button" title="Remote Laser Pointer">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></svg>
-            <span>Laser</span>
-          </button>
-
-          <!-- Audio Toggle -->
-          <button id="btnToggleAudio" class="pill-btn" type="button" title="Mute/Unmute Audio">
-            <svg id="audioIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
-            <span id="audioLabel">Muted</span>
-          </button>
-
-          <!-- Fit Screen Toggle -->
-          <button id="btnToggleFit" class="pill-btn" type="button" title="Toggle Aspect Ratio">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
-            <span>Fit</span>
-          </button>
-
-          <!-- Special Keys Menu Button -->
-          <button id="btnSpecialKeys" class="pill-btn" type="button" title="Send Special Keys">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M18 12h.01M8 16h8"></path></svg>
-            <span>Keys ⌨️</span>
-          </button>
-
-          <!-- Keys Dropdown Popover -->
-          <div id="keysDropdown" class="keys-popover hidden">
-            <button id="btnKeyCAD" class="key-btn" type="button">
-              <span>Ctrl + Alt + Del</span>
-              <span class="key-badge">Task Mgr</span>
-            </button>
-            <button id="btnKeyWin" class="key-btn" type="button">
-              <span>Windows Key</span>
-              <span class="key-badge">Start</span>
-            </button>
-            <button id="btnKeyAltTab" class="key-btn" type="button">
-              <span>Alt + Tab</span>
-              <span class="key-badge">Switch</span>
-            </button>
-            <div class="text-sender-row">
-              <input type="text" id="textSenderInput" class="text-sender-input" placeholder="Type text to send..." autocomplete="off">
-              <button id="btnSendTextToRemote" class="btn-send-text" type="button">Send</button>
-            </div>
-          </div>
-
-          <!-- Chat Button -->
-          <button id="btnOpenChat" class="pill-btn" type="button" title="Open Chat">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-            <span>Chat</span>
-            <span id="chatBadge" class="badge-unread hidden">0</span>
-          </button>
-
-          <!-- Send File Button -->
-          <button id="btnOpenFile" class="pill-btn" type="button" title="Send File">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-            <span>File</span>
-          </button>
-          <input type="file" id="filePickerInput" class="hidden">
-
-          <!-- Fullscreen Button -->
-          <button id="btnFullscreen" class="pill-btn" type="button" title="Full Screen">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
-          </button>
-
-          <!-- Leave Call / Stop Button -->
-          <button id="btnStopSession" class="btn-leave" type="button">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
-            <span>Disconnect</span>
-          </button>
-        </div>
-
+        <h3 id="loaderTitle" class="loader-title">Connecting to partner...</h3>
+        <p id="loaderSubtitle" class="loader-subtitle">Waiting for remote host approval and WebRTC media handshake</p>
+        <button id="btnCancelConnect" class="btn-cancel" type="button">Cancel Connection</button>
       </div>
     </div>
 
   </div>
 
-  <!-- HOST SHARING FLOATING BAR (Appears on Host's screen while sharing) -->
+  <!-- ==========================================================================
+       COLLAPSIBLE SIDE DRAWER (Chat, 16KB P2P File Transfer, Shared Clipboard)
+       ========================================================================== -->
+  <aside id="sideDrawer" class="side-drawer drawer-closed">
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line></svg>
+        <span>Session Tools</span>
+      </div>
+      <button id="btnCloseDrawer" class="btn-close-drawer" type="button" title="Close Tools Drawer">✕</button>
+    </div>
+
+    <!-- 3 Tabs Navigation -->
+    <div class="drawer-tabs">
+      <button id="tabBtnChat" class="drawer-tab active" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        <span>Chat</span>
+      </button>
+      <button id="tabBtnFiles" class="drawer-tab" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+        <span>Files</span>
+      </button>
+      <button id="tabBtnClipboard" class="drawer-tab" type="button">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        <span>Clipboard</span>
+      </button>
+    </div>
+
+    <div class="drawer-content">
+      
+      <!-- TAB 1: Chat -->
+      <div id="tabPaneChat" class="drawer-tab-pane">
+        <div id="chatMessages" class="chat-messages-wrap">
+          <div class="text-xs text-center text-slate-500 py-3">P2P encrypted live session chat 💬</div>
+        </div>
+        <form id="chatForm" class="chat-form">
+          <input type="text" id="chatInput" class="chat-input" placeholder="Type a message..." autocomplete="off">
+          <button type="submit" id="btnSendChat" class="btn-send-chat">Send</button>
+        </form>
+      </div>
+
+      <!-- TAB 2: File Transfer (16KB Chunks) -->
+      <div id="tabPaneFiles" class="drawer-tab-pane hidden">
+        <input type="file" id="filePickerInput" class="hidden">
+        
+        <div id="dropzoneBox" class="dropzone-box" title="Click or Drag Files Here">
+          <div class="dropzone-icon">
+            <svg class="mx-auto" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          </div>
+          <div class="dropzone-text">Click or Drag & Drop File</div>
+          <div class="dropzone-sub">Chunks over RTCDataChannel in 16KB blocks</div>
+        </div>
+
+        <div class="text-xs font-bold uppercase text-slate-500 tracking-wider mb-2">Transfer Progress</div>
+        <div id="transfersList" class="transfers-list">
+          <div class="text-xs text-slate-500 text-center py-4">No active file transfers</div>
+        </div>
+      </div>
+
+      <!-- TAB 3: Shared Clipboard -->
+      <div id="tabPaneClipboard" class="drawer-tab-pane hidden">
+        <div class="clipboard-wrap">
+          <p class="text-xs text-slate-400">Synchronize text snippets directly between host and viewer over the encrypted RTCDataChannel.</p>
+          <textarea id="sharedClipboardText" class="clipboard-textarea" placeholder="Paste or type text to synchronize across computers..."></textarea>
+          
+          <div class="clipboard-btn-row">
+            <button id="btnClipboardPush" class="btn-clipboard btn-clipboard-push" type="button">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+              <span>Push to Remote</span>
+            </button>
+            <button id="btnClipboardPull" class="btn-clipboard btn-clipboard-pull" type="button">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>
+              <span>Pull Remote</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ==========================================================================
+       HOST FLOATING STATUS BAR (Visible on Host Screen while Sharing)
+       ========================================================================== -->
   <div id="hostNotice" class="host-notice hidden">
     <div class="host-notice-box">
       <span class="red-record-dot"></span>
       <div>
-        <div class="host-notice-title">You are sharing your screen!</div>
-        <div id="hostNoticeSub" class="host-notice-sub">Partner controlling</div>
+        <div class="host-notice-title">Desktop Sharing Active</div>
+        <div id="hostNoticeSub" class="host-notice-sub">Partner controlling screen</div>
       </div>
       <button id="btnHostStop" class="btn-host-stop" type="button">Stop Sharing</button>
     </div>
   </div>
 
-  <!-- FRIENDLY INCOMING PERMISSION MODAL -->
+  <!-- ==========================================================================
+       INCOMING CONNECTION MODAL (30s Authorization Handshake)
+       ========================================================================== -->
   <div id="modalIncoming" class="modal-backdrop hidden">
     <div class="modal-card">
-      <div class="modal-emoji">💻</div>
-      <h3>Your partner wants to view and control your screen!</h3>
-      <p>Partner Code: <b id="incomingFriendCode" class="highlight-code">000 000</b></p>
-      <p class="modal-explainer">When you click "Allow", your browser will ask you to choose which screen or window to stream. Remote mouse and keyboard control will be enabled.</p>
-      
-      <div class="modal-buttons">
-        <button id="btnDecline" class="btn-modal-decline" type="button">No, Decline</button>
-        <button id="btnAccept" class="btn-modal-accept" type="button">Yes, Allow Control</button>
+      <div class="modal-icon-badge">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
       </div>
-    </div>
-  </div>
 
-  <!-- FRIENDLY CHAT WINDOW -->
-  <div id="chatDrawer" class="chat-drawer hidden">
-    <div class="chat-header">
-      <div class="chat-title">
-        <span class="green-dot"></span>
-        <span>Live Session Chat</span>
-      </div>
-      <button id="btnCloseChat" class="btn-close-chat" type="button">✕</button>
-    </div>
+      <h3 class="modal-title">Incoming Remote Access</h3>
+      <p class="modal-subtitle">A remote partner wants to view and control your desktop.</p>
 
-    <div id="chatMessages" class="chat-messages">
-      <div class="chat-welcome">Say hello in real time! 👋</div>
-    </div>
-
-    <form id="chatForm" class="chat-input-row">
-      <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off">
-      <button type="submit" id="btnSendChat" class="btn-send-chat">Send</button>
-    </form>
-  </div>
-
-  <!-- FILE TRANSFER PROGRESS BANNER -->
-  <div id="fileBanner" class="file-banner hidden">
-    <div class="file-banner-content">
-      <span id="fileIcon" class="file-icon">📁</span>
-      <div class="file-info">
-        <div id="fileName" class="file-name">document.pdf</div>
-        <div class="progress-bar">
-          <div id="fileProgressFill" class="progress-fill" style="width: 0%;"></div>
+      <div class="peer-detail-card">
+        <div class="peer-detail-row">
+          <span class="peer-detail-label">Partner Address:</span>
+          <span id="incomingFriendCode" class="peer-detail-value text-red-400">--- --- ---</span>
         </div>
-        <div id="fileStatusText" class="file-status">Sending... 0%</div>
+        <div class="peer-detail-row">
+          <span class="peer-detail-label">Client System:</span>
+          <span id="incomingClientInfo" class="peer-detail-value text-xs text-slate-300">WebRTC Client</span>
+        </div>
+        <div class="peer-detail-row">
+          <span class="peer-detail-label">Permissions:</span>
+          <span id="incomingPerms" class="text-xs text-emerald-400 font-semibold">Audio, Pointer, Files, Clipboard</span>
+        </div>
       </div>
-      <button id="btnCloseFileBanner" class="btn-close-file" type="button">✕</button>
+
+      <!-- 30-Second Countdown Bar -->
+      <div class="countdown-wrapper">
+        <div class="countdown-header">
+          <span>Authorization Timeout</span>
+          <span id="countdownTimerText" class="countdown-timer-text">30s</span>
+        </div>
+        <div class="countdown-bar-bg">
+          <div id="countdownBarFill" class="countdown-bar-fill"></div>
+        </div>
+      </div>
+
+      <div class="modal-buttons">
+        <button id="btnDecline" class="btn-modal-decline" type="button">Decline</button>
+        <button id="btnAccept" class="btn-modal-accept" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span>Accept & Share</span>
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- REMOTE CURSOR OVERLAY ON HOST SCREEN -->
+  <!-- HOST MIRRORED CURSOR OVERLAY -->
   <div id="hostRemoteCursor" class="remote-host-cursor hidden">
     <svg class="cursor-pointer-icon" viewBox="0 0 24 24" fill="#ef4444" stroke="#ffffff" stroke-width="1.5">
       <path d="M3 3l7 18 3-7 7-3L3 3z"></path>
@@ -844,30 +543,32 @@
     <div id="remoteCursorTag" class="cursor-tag">Remote Partner</div>
   </div>
 
-  <!-- HOST KEYSTROKE HUD NOTIFICATION -->
+  <!-- HOST KEYSTROKE HUD -->
   <div id="hostKeyHUD" class="host-key-hud hidden">
-    <span id="hostKeyHUDText">⌨️ Remote Key: Enter</span>
+    <span id="hostKeyHUDText">⌨️ Key: Enter</span>
   </div>
 
-  <!-- INTERACTIVE HOST TEST NOTEPAD (Visible for presentations) -->
+  <!-- INTERACTIVE HOST TEST PAD -->
   <div id="hostTestPad" class="host-test-pad hidden">
     <div class="test-pad-title">
-      <span>Interactive Host Pad</span>
-      <span style="color: #34d399;">● Live</span>
+      <span>Host Scratchpad</span>
+      <span class="text-emerald-400 text-xs">● Live</span>
     </div>
-    <textarea id="hostScratchpadInput" class="test-pad-input" placeholder="Remote partner types here live..."></textarea>
+    <textarea id="hostScratchpadInput" class="test-pad-input" placeholder="Partner types here in real time..."></textarea>
   </div>
 
-  <!-- SIMPLE TOAST ALERTS -->
+  <!-- TOAST ALERTS CONTAINER -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- PeerJS WebRTC Library (Fast Cloudflare Global CDN + Local Fallback) -->
+  <!-- PeerJS WebRTC Library (CDN + Local Fallback) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <script>
     if (typeof Peer === 'undefined') {
       document.write('<script src="js/peerjs.min.js"><\/script>');
     }
   </script>
+
+  <!-- Application Engine -->
   <script src="js/app.js"></script>
 </body>
 </html>

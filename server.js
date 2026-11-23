@@ -73,11 +73,11 @@ app.post('/api/host-input', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`[Socket] Connected: ${socket.id}`);
 
-  // 1. Host registers their 6-digit code
+  // 1. Host registers their 9-digit session code
   socket.on('register-host', ({ code, pin, permissions }, callback) => {
     const cleanCode = normalizeCode(code);
     if (!cleanCode || cleanCode.length < 6 || cleanCode.length > 9) {
-      if (callback) callback({ success: false, error: 'Invalid 6-digit access code' });
+      if (callback) callback({ success: false, error: 'Invalid 9-digit access code' });
       return;
     }
 
@@ -108,11 +108,11 @@ io.on('connection', (socket) => {
     if (callback) callback({ success: true, code: cleanCode });
   });
 
-  // 2. Viewer requests connection to Host via 6-digit code
+  // 2. Viewer requests connection to Host via 9-digit code
   socket.on('request-connection', ({ code, pin, clientInfo }, callback) => {
     const cleanCode = normalizeCode(code);
     if (!cleanCode || cleanCode.length < 6 || cleanCode.length > 9) {
-      if (callback) callback({ success: false, error: 'Please enter a valid 6-digit Access Code.' });
+      if (callback) callback({ success: false, error: 'Please enter a valid 9-digit Access Code.' });
       return;
     }
 
