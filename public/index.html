@@ -258,17 +258,20 @@
        ========================================================================== -->
   <div id="sessionView" class="session-view hidden">
     
-    <!-- Top Hover Trigger Zone -->
-    <div id="toolbarTriggerZone" class="toolbar-trigger-zone"></div>
-
-    <!-- Restore Toolbar Floating Pill (Visible when toolbar is hidden) -->
-    <button id="btnRestoreToolbar" class="toolbar-restore-pill hidden" type="button" title="Show Controls Toolbar">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
-      <span>Controls</span>
-    </button>
-
-    <!-- Floating Top Action Toolbar (Auto-Hiding) -->
-    <div id="sessionToolbar" class="floating-top-toolbar">
+    <!-- Floating Draggable Session Toolbar -->
+    <div id="sessionToolbar" class="floating-top-toolbar" role="toolbar" aria-label="Remote Session Controls">
+      
+      <!-- Drag Grip Handle -->
+      <div id="toolbarDragHandle" class="toolbar-drag-handle" title="Drag to float anywhere">
+        <svg width="12" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="8" cy="5" r="1.5"></circle>
+          <circle cx="8" cy="12" r="1.5"></circle>
+          <circle cx="8" cy="19" r="1.5"></circle>
+          <circle cx="16" cy="5" r="1.5"></circle>
+          <circle cx="16" cy="12" r="1.5"></circle>
+          <circle cx="16" cy="19" r="1.5"></circle>
+        </svg>
+      </div>
       
       <!-- Live Stats Pill -->
       <div id="sessionStatsPill" class="stats-pill" title="WebRTC RTCPeerConnection Live Statistics">
@@ -367,6 +370,11 @@
       <button id="btnStopSession" class="btn-disconnect" type="button">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
         <span>Disconnect</span>
+      </button>
+
+      <!-- Minimize / Expand Floating Bar Button -->
+      <button id="btnMinimizeToolbar" class="btn-minimize-toolbar" type="button" title="Minimize / Collapse Toolbar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
       </button>
 
     </div>

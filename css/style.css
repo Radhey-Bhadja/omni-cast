@@ -811,74 +811,99 @@ input:checked + .slider:before {
   z-index: 10;
 }
 
-/* Floating Top Action Toolbar (Auto-Hiding) */
+/* ==========================================================================
+   Floating Draggable Action Toolbar
+   ========================================================================== */
 .floating-top-toolbar {
-  position: absolute;
-  top: 1rem;
+  position: fixed;
+  top: 1.25rem;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 80;
+  z-index: 1000;
   display: flex;
   align-items: center;
   gap: 0.65rem;
   background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(14px);
-  border: 1px solid var(--border-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.95);
   border-radius: 9999px;
-  padding: 0.45rem 0.85rem;
-  box-shadow: 0 10px 35px rgba(15, 23, 42, 0.15);
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
-  max-width: 95vw;
-}
-.floating-top-toolbar.toolbar-hidden {
-  transform: translate(-50%, -120%);
-  opacity: 0;
-  pointer-events: none;
-}
-.floating-top-toolbar:hover {
-  transform: translateX(-50%) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
+  padding: 0.4rem 0.8rem;
+  box-shadow: 0 14px 40px -4px rgba(15, 23, 42, 0.22), 0 4px 14px rgba(15, 23, 42, 0.08);
+  max-width: 96vw;
+  user-select: none;
+  touch-action: none;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-/* Hover trigger zone at top of viewport */
-.toolbar-trigger-zone {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 60px;
-  z-index: 79;
+.floating-top-toolbar.is-dragging {
+  cursor: grabbing !important;
+  box-shadow: 0 24px 50px -4px rgba(15, 23, 42, 0.35), 0 8px 20px rgba(15, 23, 42, 0.15);
+  border-color: rgba(56, 189, 248, 0.6);
+  opacity: 0.97;
+}
+
+.floating-top-toolbar.is-dragging * {
+  cursor: grabbing !important;
   pointer-events: none;
 }
 
-/* Restore Toolbar Floating Pill (Visible when toolbar is hidden) */
-.toolbar-restore-pill {
-  position: absolute;
-  top: 0.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 81;
+/* Drag Grip Handle */
+.toolbar-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.3rem;
+  cursor: grab;
+  color: #94a3b8;
+  border-radius: 6px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.toolbar-drag-handle:hover {
+  color: #334155;
+  background: rgba(241, 245, 249, 0.8);
+}
+
+/* Minimize / Collapse Button */
+.btn-minimize-toolbar {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  background: rgba(255, 255, 255, 0.95);
-  color: var(--text-main);
-  border: 1px solid var(--border-card);
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   border-radius: 9999px;
-  padding: 0.3rem 0.85rem;
-  font-size: 0.75rem;
-  font-weight: 700;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
   cursor: pointer;
-  box-shadow: 0 4px 15px rgba(15, 23, 42, 0.15);
-  backdrop-filter: blur(10px);
-  transition: all 0.2s ease;
-  user-select: none;
+  transition: all 0.15s ease;
+  margin-left: -0.2rem;
 }
-.toolbar-restore-pill:hover {
-  background: #ffffff;
-  transform: translateX(-50%) translateY(2px);
-  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.2);
+
+.btn-minimize-toolbar:hover {
+  background: var(--bg-subtle);
+  color: var(--text-main);
+  border-color: var(--border-card);
+}
+
+/* Minimized Floating State */
+.floating-top-toolbar.toolbar-minimized {
+  padding: 0.35rem 0.65rem;
+  gap: 0.45rem;
+}
+
+.floating-top-toolbar.toolbar-minimized > *:not(#toolbarDragHandle):not(#sessionStatsPill):not(#btnMinimizeToolbar) {
+  display: none !important;
+}
+
+.floating-top-toolbar.toolbar-minimized #sessionStatsPill {
+  padding: 0.25rem 0.5rem;
+  gap: 0.35rem;
+}
+
+.floating-top-toolbar.toolbar-minimized #sessionStatsPill > *:not(:first-child):not(:nth-child(2)) {
+  display: none !important;
 }
 
 /* Live Stats Pill */

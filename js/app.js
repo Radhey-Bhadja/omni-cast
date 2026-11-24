@@ -1097,6 +1097,14 @@
     const cursor = $('hostRemoteCursor');
     if (cursor) cursor.classList.add('hidden');
 
+    const toolbar = $('sessionToolbar');
+    if (toolbar) {
+      toolbar.style.left = '';
+      toolbar.style.top = '';
+      toolbar.style.transform = '';
+      toolbar.classList.remove('toolbar-minimized', 'is-dragging');
+    }
+
     state.isHost = false;
     sound.end();
 
@@ -2046,56 +2054,122 @@
     if (badgeText) badgeText.textContent = text;
   }
 
-  function setupAutoHidingToolbar() {
+  function setupFloatingToolbar() {
     const toolbar = $('sessionToolbar');
-    const trigger = $('toolbarTriggerZone');
-    const restoreBtn = $('btnRestoreToolbar');
+    const dragHandle = $('toolbarDragHandle');
+    const btnMinimize = $('btnMinimizeToolbar');
     if (!toolbar) return;
 
-    let hideTimer = null;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let initialLeft = 0;
+    let initialTop = 0;
+    let hasCustomPosition = false;
 
-    function showToolbar() {
-      toolbar.classList.remove('toolbar-hidden');
-      if (restoreBtn) restoreBtn.classList.add('hidden');
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => {
-        if (!state.isKeysPopoverOpen) {
-          toolbar.classList.add('toolbar-hidden');
-          if (restoreBtn) restoreBtn.classList.remove('hidden');
-        }
-      }, 3500);
+    // Minimize / Expand Floating Bar Toggle
+    if (btnMinimize) {
+      on(btnMinimize, 'click', (e) => {
+        e.stopPropagation();
+        const isMin = toolbar.classList.toggle('toolbar-minimized');
+        btnMinimize.innerHTML = isMin 
+          ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>'
+          : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
+        btnMinimize.title = isMin ? 'Expand Toolbar' : 'Minimize Toolbar';
+      });
     }
 
-    if (restoreBtn) {
-      restoreBtn.addEventListener('click', showToolbar);
-    }
-
-    window.addEventListener('mousemove', (e) => {
-      if (e.clientY < 75) {
-        showToolbar();
+    function onDragStart(e) {
+      const target = e.target;
+      // Allow normal click interaction on interactive elements
+      if (
+        !dragHandle.contains(target) && (
+          target.tagName === 'BUTTON' || 
+          target.tagName === 'SELECT' || 
+          target.tagName === 'INPUT' || 
+          target.closest('button') || 
+          target.closest('select') || 
+          target.closest('input') ||
+          target.closest('#keysDropdown')
+        )
+      ) {
+        return;
       }
-    });
 
-    window.addEventListener('touchstart', (e) => {
-      if (e.touches && e.touches[0] && e.touches[0].clientY < 80) {
-        showToolbar();
+      const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+      const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+
+      isDragging = true;
+      startX = clientX;
+      startY = clientY;
+
+      const rect = toolbar.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+
+      if (!hasCustomPosition) {
+        toolbar.style.transform = 'none';
+        toolbar.style.left = `${initialLeft}px`;
+        toolbar.style.top = `${initialTop}px`;
+        hasCustomPosition = true;
       }
-    }, { passive: true });
 
-    if (trigger) {
-      trigger.addEventListener('mouseenter', showToolbar);
+      toolbar.classList.add('is-dragging');
+      document.body.style.userSelect = 'none';
     }
-    toolbar.addEventListener('mouseenter', () => {
-      if (hideTimer) clearTimeout(hideTimer);
-    });
-    toolbar.addEventListener('mouseleave', () => {
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => {
-        if (!state.isKeysPopoverOpen) {
-          toolbar.classList.add('toolbar-hidden');
-          if (restoreBtn) restoreBtn.classList.remove('hidden');
-        }
-      }, 2000);
+
+    function onDragMove(e) {
+      if (!isDragging) return;
+      if (e.cancelable) e.preventDefault();
+
+      const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+      const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+
+      const deltaX = clientX - startX;
+      const deltaY = clientY - startY;
+
+      let newLeft = initialLeft + deltaX;
+      let newTop = initialTop + deltaY;
+
+      // Viewport boundary clamping with 12px margin
+      const tbWidth = toolbar.offsetWidth;
+      const tbHeight = toolbar.offsetHeight;
+      const maxLeft = window.innerWidth - tbWidth - 12;
+      const maxTop = window.innerHeight - tbHeight - 12;
+
+      newLeft = Math.max(12, Math.min(maxLeft, newLeft));
+      newTop = Math.max(12, Math.min(maxTop, newTop));
+
+      toolbar.style.left = `${newLeft}px`;
+      toolbar.style.top = `${newTop}px`;
+    }
+
+    function onDragEnd() {
+      if (!isDragging) return;
+      isDragging = false;
+      toolbar.classList.remove('is-dragging');
+      document.body.style.userSelect = '';
+
+      const rect = toolbar.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+    }
+
+    toolbar.addEventListener('mousedown', onDragStart);
+    window.addEventListener('mousemove', onDragMove, { passive: false });
+    window.addEventListener('mouseup', onDragEnd);
+
+    toolbar.addEventListener('touchstart', onDragStart, { passive: true });
+    window.addEventListener('touchmove', onDragMove, { passive: false });
+    window.addEventListener('touchend', onDragEnd);
+
+    window.addEventListener('resize', () => {
+      if (!hasCustomPosition) return;
+      const rect = toolbar.getBoundingClientRect();
+      const maxLeft = window.innerWidth - rect.width - 12;
+      const maxTop = window.innerHeight - rect.height - 12;
+      if (rect.left > maxLeft) toolbar.style.left = `${Math.max(12, maxLeft)}px`;
+      if (rect.top > maxTop) toolbar.style.top = `${Math.max(12, maxTop)}px`;
     });
   }
 
@@ -2103,7 +2177,7 @@
     updateCodeDisplay();
     initLaserCanvas();
     bindViewerInputEvents();
-    setupAutoHidingToolbar();
+    setupFloatingToolbar();
     checkServerStatus();
 
     // 1. Copy Address button
