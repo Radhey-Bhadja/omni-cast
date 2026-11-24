@@ -326,80 +326,6 @@
   }
 
   // =========================================================================
-  // Recent Sessions Manager (localStorage)
-  // =========================================================================
-  function getRecentSessions() {
-    try {
-      const data = localStorage.getItem('omnicast_recent_sessions');
-      return data ? JSON.parse(data) : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function saveRecentSession(code) {
-    if (!code) return;
-    const clean = cleanDigits(code);
-    if (clean.length !== 9) return;
-    try {
-      let recents = getRecentSessions().filter(item => item.id !== clean);
-      recents.unshift({ id: clean, timestamp: Date.now() });
-      if (recents.length > 8) recents = recents.slice(0, 8);
-      localStorage.setItem('omnicast_recent_sessions', JSON.stringify(recents));
-      renderRecentSessions();
-    } catch (e) {}
-  }
-
-  function renderRecentSessions() {
-    const listEl = $('recentSessionsList');
-    if (!listEl) return;
-    const recents = getRecentSessions();
-    if (recents.length === 0) {
-      listEl.innerHTML = `<div class="recent-empty">No recent connections yet. Past sessions will appear here for fast reconnect.</div>`;
-      return;
-    }
-
-    listEl.innerHTML = recents.map(item => {
-      const timeStr = getTimeAgo(item.timestamp);
-      const formatted = formatDisplay(item.id);
-      return `
-        <div class="recent-card">
-          <div class="recent-card-info">
-            <div class="recent-icon-wrap">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-            </div>
-            <div>
-              <div class="recent-id">${formatted}</div>
-              <div class="recent-time">${timeStr}</div>
-            </div>
-          </div>
-          <button class="btn-quick-connect" data-code="${item.id}" type="button">Connect</button>
-        </div>
-      `;
-    }).join('');
-
-    listEl.querySelectorAll('.btn-quick-connect').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const code = e.currentTarget.getAttribute('data-code');
-        const input = $('targetCodeInput');
-        if (input) {
-          input.value = formatDisplay(code);
-          const form = $('connectForm');
-          if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
-        }
-      });
-    });
-  }
-
-  function getTimeAgo(ts) {
-    const diff = Math.floor((Date.now() - ts) / 1000);
-    if (diff < 60) return 'Just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return `${Math.floor(diff / 86400)}d ago`;
-  }
-
-  // =========================================================================
   // Bulletproof Remote Video Attachment & Autoplay Unlock
   // =========================================================================
   function attachRemoteStream(stream) {
@@ -545,7 +471,6 @@
     sound.success();
     showToast('Connected! Live screen active.', 'success');
     startStatsPolling();
-    if (state.targetCode) saveRecentSession(state.targetCode);
   }
 
   // Dynamic STUN/TURN Discovery
@@ -2176,7 +2101,6 @@
 
   function initUI() {
     updateCodeDisplay();
-    renderRecentSessions();
     initLaserCanvas();
     bindViewerInputEvents();
     setupAutoHidingToolbar();
@@ -2482,13 +2406,6 @@
         state.activeConn.send({ type: 'clipboard-pull-req' });
         showToast('Requesting partner clipboard...', 'info');
       }
-    });
-
-    // 18. Clear Recent Sessions
-    on($('btnClearRecent'), 'click', () => {
-      localStorage.removeItem('omnicast_recent_sessions');
-      renderRecentSessions();
-      showToast('Recent sessions cleared.', 'info');
     });
 
     // 19. Quality Selector
