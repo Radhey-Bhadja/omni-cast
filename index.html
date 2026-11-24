@@ -95,6 +95,18 @@
             </button>
           </div>
 
+          <!-- Unattended Access PIN Setup -->
+          <div class="unattended-row">
+            <label class="unattended-toggle-label">
+              <input type="checkbox" id="unattendedToggle">
+              <span class="unattended-text">Unattended Access (Password)</span>
+            </label>
+            <div id="unattendedPinBox" class="unattended-pin-wrap hidden">
+              <input type="password" id="unattendedPinInput" class="unattended-pin-input" placeholder="Set PIN (e.g. 1234)" maxlength="16" autocomplete="new-password">
+              <button type="button" id="btnSavePin" class="btn-pin-action">Save</button>
+            </div>
+          </div>
+
           <div class="status-row">
             <div class="status-indicator">
               <span class="status-dot"></span>
@@ -104,18 +116,6 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
               <span>Refresh ID</span>
             </button>
-          </div>
-
-          <!-- Unattended Access PIN Setup -->
-          <div class="unattended-row">
-            <label class="unattended-toggle-label">
-              <input type="checkbox" id="toggleUnattendedAccess">
-              <span class="unattended-text">Unattended Access (Password)</span>
-            </label>
-            <div id="unattendedPinContainer" class="unattended-pin-wrap hidden">
-              <input type="password" id="hostUnattendedPin" class="unattended-pin-input" placeholder="Set PIN (e.g. 1234)" maxlength="16">
-              <button type="button" id="btnSavePin" class="btn-pin-action">Save</button>
-            </div>
           </div>
         </section>
 
@@ -282,7 +282,7 @@
         <span>|</span>
         <span><span id="statBitrate" class="stats-stat-val">--</span></span>
         <span>|</span>
-        <span id="statRes" class="text-slate-300">1080p</span>
+        <span id="statRes" class="text-slate-600 font-semibold">1080p</span>
       </div>
 
       <!-- Quality Selector -->
@@ -439,7 +439,7 @@
       <!-- TAB 2: Shared Clipboard -->
       <div id="tabPaneClipboard" class="drawer-tab-pane hidden">
         <div class="clipboard-wrap">
-          <p class="text-xs text-slate-400">Synchronize text snippets directly between host and viewer over the encrypted RTCDataChannel.</p>
+          <p class="text-xs text-slate-500">Synchronize text snippets directly between host and viewer over the encrypted RTCDataChannel.</p>
           <textarea id="sharedClipboardText" class="clipboard-textarea" placeholder="Paste or type text to synchronize across computers..."></textarea>
           
           <div class="clipboard-btn-row">
@@ -458,7 +458,7 @@
       <!-- TAB 3: P2P File Transfer -->
       <div id="tabPaneFiles" class="drawer-tab-pane hidden">
         <div class="file-transfer-wrap">
-          <p class="text-xs text-slate-400 mb-2">Transfer files chunk-by-chunk directly between browsers over RTCDataChannel with backpressure flow control.</p>
+          <p class="text-xs text-slate-500 mb-2">Transfer files chunk-by-chunk directly between browsers over RTCDataChannel with backpressure flow control.</p>
           
           <div id="fileDropZone" class="file-drop-zone">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
@@ -486,7 +486,7 @@
 
           <div class="transfers-history-title">Session Transferred Files</div>
           <div id="transfersList" class="transfers-list">
-            <div id="transfersEmptyText" class="text-xs text-slate-400 text-center py-4">No files transferred yet.</div>
+            <div id="transfersEmptyText" class="text-xs text-slate-500 text-center py-4">No files transferred yet.</div>
           </div>
         </div>
       </div>
@@ -523,19 +523,19 @@
       <div class="peer-detail-card">
         <div class="peer-detail-row">
           <span class="peer-detail-label">Partner Address:</span>
-          <span id="incomingFriendCode" class="peer-detail-value text-red-400">--- --- ---</span>
+          <span id="incomingFriendCode" class="peer-detail-value text-red-600 font-bold">--- --- ---</span>
         </div>
         <div class="peer-detail-row">
           <span class="peer-detail-label">Client System:</span>
-          <span id="incomingClientInfo" class="peer-detail-value text-xs text-slate-300">WebRTC Client</span>
+          <span id="incomingClientInfo" class="peer-detail-value text-xs text-slate-600">WebRTC Client</span>
         </div>
         <div class="peer-detail-row">
           <span class="peer-detail-label">Permissions:</span>
-          <span id="incomingPerms" class="text-xs text-emerald-400 font-semibold">Audio, Remote Pointer, Clipboard</span>
+          <span id="incomingPerms" class="text-xs text-emerald-600 font-semibold">Audio, Remote Pointer, Clipboard</span>
         </div>
       </div>
 
-      <p class="text-xs text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5 mb-4 text-left">
+      <p class="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-4 text-left">
         💡 <b>Tip:</b> Choose <b>Entire Screen</b> when Chrome prompts you so your desktop streams smoothly without background tab occlusion.
       </p>
 

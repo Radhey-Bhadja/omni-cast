@@ -2272,9 +2272,20 @@
     on($('btnSpecialKeys'), 'click', (e) => {
       e.stopPropagation();
       const popover = $('keysDropdown');
-      if (!popover) return;
+      const btn = $('btnSpecialKeys');
+      if (!popover || !btn) return;
       state.isKeysPopoverOpen = !state.isKeysPopoverOpen;
       popover.classList.toggle('hidden', !state.isKeysPopoverOpen);
+      if (state.isKeysPopoverOpen) {
+        const btnRect = btn.getBoundingClientRect();
+        if (btnRect.bottom + 260 > window.innerHeight) {
+          popover.style.top = 'auto';
+          popover.style.bottom = 'calc(100% + 0.6rem)';
+        } else {
+          popover.style.bottom = 'auto';
+          popover.style.top = 'calc(100% + 0.6rem)';
+        }
+      }
     });
 
     window.addEventListener('click', (e) => {
@@ -2462,6 +2473,8 @@
     const unattendedToggle = $('unattendedToggle');
     const unattendedPinInput = $('unattendedPinInput');
     const unattendedBox = $('unattendedPinBox');
+    const btnSavePin = $('btnSavePin');
+
     if (unattendedToggle) {
       on(unattendedToggle, 'change', (e) => {
         state.unattendedEnabled = e.target.checked;
@@ -2471,6 +2484,7 @@
         }
       });
     }
+
     if (unattendedPinInput) {
       on(unattendedPinInput, 'input', (e) => {
         state.unattendedPin = e.target.value.trim();
@@ -2478,7 +2492,18 @@
       });
       if (state.unattendedPin) {
         unattendedPinInput.value = state.unattendedPin;
+        if (unattendedToggle) unattendedToggle.checked = true;
+        state.unattendedEnabled = true;
+        if (unattendedBox) unattendedBox.classList.remove('hidden');
       }
+    }
+
+    if (btnSavePin && unattendedPinInput) {
+      on(btnSavePin, 'click', () => {
+        state.unattendedPin = unattendedPinInput.value.trim();
+        sessionStorage.setItem('omnicast_unattended_pin', state.unattendedPin);
+        showToast(state.unattendedPin ? 'Unattended Access PIN saved!' : 'Unattended PIN cleared', 'success');
+      });
     }
 
     // Granular Permissions Checkboxes
