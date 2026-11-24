@@ -3,6 +3,7 @@
   "cleanUrls": true,
   "rewrites": [
     { "source": "/api/status", "destination": "/api/status.js" },
+    { "source": "/api/turn-credentials", "destination": "/api/turn-credentials.js" },
     { "source": "/api/host-input", "destination": "/api/host-input.js" },
     { "source": "/api/(.*)", "destination": "/api/$1" }
   ],

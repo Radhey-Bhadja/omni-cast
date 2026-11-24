@@ -728,8 +728,12 @@
         relayInputToHostBridge(data);
       }
 
-      // 6. Remote Control: Mouse Up / Click
-      else if (data.type === 'mouse-up' || data.type === 'mouse-click') {
+      // 6. Remote Control: Mouse Up / Click / Double Click
+      else if (data.type === 'mouse-up' || data.type === 'mouse-click' || data.type === 'double-click') {
+        if (data.type === 'double-click') {
+          addClickRipple(data.x * window.innerWidth, data.y * window.innerHeight, '#38bdf8');
+          setTimeout(() => addClickRipple(data.x * window.innerWidth, data.y * window.innerHeight, '#38bdf8'), 120);
+        }
         relayInputToHostBridge(data);
       }
 
@@ -830,6 +834,16 @@
 
     $('incomingFriendCode').textContent = formatDisplay(callerCode);
     $('incomingClientInfo').textContent = clientInfo.browser || 'WebRTC Remote Desktop';
+
+    const permsEl = $('incomingPerms');
+    if (permsEl) {
+      const perms = [];
+      if (state.permissions.allowPointer) perms.push('Mouse/Keyboard');
+      if (state.permissions.allowAudio) perms.push('Audio');
+      if (state.permissions.allowClipboard) perms.push('Clipboard');
+      if (state.permissions.allowFileTransfer) perms.push('File Transfer');
+      permsEl.textContent = perms.join(', ') || 'View Only';
+    }
 
     modal.classList.remove('hidden');
 
@@ -1997,15 +2011,38 @@
     hudTimer = setTimeout(() => hud.classList.add('hidden'), 2000);
   }
 
-  function relayInputToHostBridge(eventData) {
+  let isBridgeRelayInFlight = false;
+  let pendingBridgeMoveEvent = null;
+
+  async function relayInputToHostBridge(eventData) {
     if (!state.hasServerApi) return;
+
+    // Coalesce high-frequency mouse movements to prevent HTTP socket congestion
+    if (eventData.type === 'mouse-move' || eventData.type === 'laser') {
+      if (isBridgeRelayInFlight) {
+        pendingBridgeMoveEvent = eventData;
+        return;
+      }
+      isBridgeRelayInFlight = true;
+    }
+
     try {
-      fetch('/api/host-input', {
+      await fetch('/api/host-input', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event: eventData })
-      }).catch(() => {});
-    } catch (e) {}
+      });
+    } catch (e) {
+    } finally {
+      if (eventData.type === 'mouse-move' || eventData.type === 'laser') {
+        isBridgeRelayInFlight = false;
+        if (pendingBridgeMoveEvent) {
+          const next = pendingBridgeMoveEvent;
+          pendingBridgeMoveEvent = null;
+          relayInputToHostBridge(next);
+        }
+      }
+    }
   }
 
   // =========================================================================
